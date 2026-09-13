@@ -10,3 +10,4 @@ timing-report.md
 .env
 # ZCode 工作区指令文件, 不入库
 AGENTS.md
+probe-results.json
