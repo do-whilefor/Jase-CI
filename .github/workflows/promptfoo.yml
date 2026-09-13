@@ -1,24 +1,148 @@
-name: promptfoo redteam CI
+name: pf-ci-timing
+
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 2 * * *" # 每天 UTC 02:00 全量红队扫描
+
+concurrency:
+  group: pf-ci-timing
+  cancel-in-progress: false
+
 jobs:
-  redteam:
+  # ------------------------------------------------------------------
+  # 1. 离线验证 — 不需要任何密钥: 配置结构校验 + Agent mock 全链路测试
+  # ------------------------------------------------------------------
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install -g promptfoo
-      - run: promptfoo --version
-      - name: config smoke (no key, dry validation)
-        run: promptfoo eval -c promptfooconfig_full.yaml --dry-run || true
-      - name: redteam eval
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: promptfoo eval -c promptfooconfig_full.yaml -o results.json
-        continue-on-error: true
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/setup-python@v5
         with:
-          name: results
-          path: results.json
+          python-version: "3.12"
+
+      - name: 安装 promptfoo (供配置校验解析 YAML)
+        run: npm install -g promptfoo@0.123.0
+
+      - name: 配置结构校验 (语法/插件/凭证注入方式)
+        run: node scripts/validate_configs.js
+
+      - name: Agent 语法检查
+        run: node --check agent/server.js
+
+      - name: "本地测试套件 (mock 模式: 工具/RAG/记忆/门禁/时延)"
+        run: python3 tests/run_tests.py
+
+  # ------------------------------------------------------------------
+  # 2. 真正 RedTeam 执行 + CI Security Gate
+  #    需要 repo secret: DEEPSEEK_API_KEY
+  #    push 触发时只跑定向套件 (agent/rag/memory); schedule 与手动触发加跑全量扫描
+  # ------------------------------------------------------------------
+  redteam-and-gate:
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 120
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      AGENT_API_KEY: local-agent-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装 promptfoo
+        run: npm install -g promptfoo@0.123.0
+
+      - name: 启动被测 Agent (真实模式, DeepSeek 后端)
+        if: env.DEEPSEEK_API_KEY != ''
+        run: |
+          nohup node agent/server.js > agent.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8787/healthz && break
+            sleep 1
+          done
+          curl -sf http://localhost:8787/healthz
+
+      - name: 红队全量扫描 (直连 DeepSeek, 仅 schedule/dispatch)
+        if: env.DEEPSEEK_API_KEY != '' && github.event_name != 'push'
+        run: promptfoo eval -c promptfooconfig_full.yaml -o results-full.json
+        continue-on-error: true
+
+      - name: 红队定向 - Agent/工具滥用
+        if: env.DEEPSEEK_API_KEY != ''
+        run: promptfoo eval -c configs/promptfooconfig.agent.yaml -o results-agent.json
+        continue-on-error: true
+
+      - name: 红队定向 - RAG 泄露
+        if: env.DEEPSEEK_API_KEY != ''
+        run: promptfoo eval -c configs/promptfooconfig.rag.yaml -o results-rag.json
+        continue-on-error: true
+
+      - name: 红队定向 - 会话记忆
+        if: env.DEEPSEEK_API_KEY != ''
+        run: promptfoo eval -c configs/promptfooconfig.memory.yaml -o results-memory.json
+        continue-on-error: true
+
+      - name: CI Security Gate (违反策略即失败, 不可跳过)
+        if: env.DEEPSEEK_API_KEY != ''
+        run: |
+          FILES=$(ls results-*.json 2>/dev/null || true)
+          if [ -z "$FILES" ]; then
+            echo "::error::没有任何红队结果文件, 安全门禁无法放行"
+            exit 1
+          fi
+          python3 scripts/security_gate.py $FILES \
+            --policy scripts/gate_policy.json --output gate-summary.json
+
+      - name: 上传红队结果与门禁报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redteam-results
+          path: |
+            results-*.json
+            gate-summary.json
+            agent.log
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------
+  # 3. Timing Benchmark — 时延/吞吐基准与预算门禁
+  # ------------------------------------------------------------------
+  timing-benchmark:
+    runs-on: ubuntu-latest
+    needs: validate
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 时延基准 (DeepSeek 直连, p95 超预算即失败)
+        if: env.DEEPSEEK_API_KEY != ''
+        run: python3 scripts/timing_benchmark.py --outdir .
+
+      - name: 上传时延报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timing-report
+          path: |
+            timing-report.json
+            timing-report.md
+          if-no-files-found: ignore
