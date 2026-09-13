@@ -40,6 +40,17 @@ jobs:
       - name: "本地测试套件 (mock 模式: 工具/RAG/记忆/门禁/时延)"
         run: python3 tests/run_tests.py
 
+      - name: "Provider 接线探针 (免密端到端: openai:chat + apiBaseUrl 真实调用)"
+        run: |
+          MOCK_MODEL=1 PORT=8787 nohup node agent/server.js > agent-probe.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8787/healthz && break
+            sleep 1
+          done
+          AGENT_API_KEY=local PROMPTFOO_DISABLE_TELEMETRY=1 \
+            promptfoo eval -c configs/promptfooconfig.probe.yaml --no-write --no-cache -o probe-results.json
+          curl -sf http://localhost:8787/healthz
+
   # ------------------------------------------------------------------
   # 2. 真正 RedTeam 执行 + CI Security Gate
   #    需要 repo secret: DEEPSEEK_API_KEY

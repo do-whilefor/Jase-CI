@@ -1,0 +1,641 @@
+{
+  "evalId": "eval-Rf1-2026-09-13T09:10:35",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-09-13T09:10:35.097Z",
+    "prompts": [
+      {
+        "id": "d3bcaf71c11c2678899be04d872718325f0916b3b0705e805ee29930663a42e2",
+        "raw": "{{question}}",
+        "label": "{{question}}",
+        "provider": "probe-openai-chat",
+        "metrics": {
+          "score": 3,
+          "testPassCount": 3,
+          "testFailCount": 0,
+          "testErrorCount": 0,
+          "assertPassCount": 3,
+          "assertFailCount": 0,
+          "totalLatencyMs": 81,
+          "tokenUsage": {
+            "prompt": 18,
+            "completion": 118,
+            "cached": 0,
+            "total": 136,
+            "numRequests": 3,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "namedScores": {},
+          "namedScoresCount": {},
+          "namedScoreWeights": {},
+          "cost": 0
+        }
+      }
+    ],
+    "results": [
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "javascript",
+                "value": "output.length > 0"
+              }
+            }
+          ]
+        },
+        "id": "bb301fa5-e4ca-4829-8715-37afafceb7b4",
+        "latencyMs": 10,
+        "namedScores": {},
+        "prompt": {
+          "raw": "你好, 请介绍一下你自己",
+          "label": "{{question}}",
+          "config": {}
+        },
+        "promptId": "d3bcaf71c11c2678899be04d872718325f0916b3b0705e805ee29930663a42e2",
+        "promptIdx": 0,
+        "provider": {
+          "id": "openai:chat:deepseek-chat",
+          "label": "probe-openai-chat"
+        },
+        "response": {
+          "output": "根据知识库: ## 退货条件\n商品自签收之日起 7 天内, 在不影响二次销售的前提下可以无理由退货。定制类商品、贴身衣物及已激活的虚拟商品不支持无理由退货。",
+          "tokenUsage": {
+            "prompt": 6,
+            "completion": 39,
+            "cached": 0,
+            "total": 45,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "cached": false,
+          "latencyMs": 10,
+          "finishReason": "stop",
+          "guardrails": {
+            "flagged": false
+          },
+          "metadata": {
+            "http": {
+              "status": 200,
+              "statusText": "OK",
+              "headers": {
+                "connection": "keep-alive",
+                "content-type": "application/json; charset=utf-8",
+                "date": "Sun, 13 Sep 2026 09:10:35 GMT",
+                "keep-alive": "timeout=5",
+                "transfer-encoding": "chunked",
+                "x-session-id": "probe-session"
+              }
+            }
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "question": "你好, 请介绍一下你自己"
+          },
+          "assert": [
+            {
+              "type": "javascript",
+              "value": "output.length > 0"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 0,
+        "tokenUsage": {
+          "prompt": 6,
+          "completion": 39,
+          "cached": 0,
+          "total": 45,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "question": "你好, 请介绍一下你自己"
+        },
+        "metadata": {
+          "http": {
+            "status": 200,
+            "statusText": "OK",
+            "headers": {
+              "connection": "keep-alive",
+              "content-type": "application/json; charset=utf-8",
+              "date": "Sun, 13 Sep 2026 09:10:35 GMT",
+              "keep-alive": "timeout=5",
+              "transfer-encoding": "chunked",
+              "x-session-id": "probe-session"
+            }
+          },
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "SO-1001"
+              }
+            }
+          ]
+        },
+        "id": "460a4bc3-0fca-4ccf-85bc-7ab33481a2e8",
+        "latencyMs": 30,
+        "namedScores": {},
+        "prompt": {
+          "raw": "订单 SO-1001 到哪了?",
+          "label": "{{question}}",
+          "config": {}
+        },
+        "promptId": "d3bcaf71c11c2678899be04d872718325f0916b3b0705e805ee29930663a42e2",
+        "promptIdx": 0,
+        "provider": {
+          "id": "openai:chat:deepseek-chat",
+          "label": "probe-openai-chat"
+        },
+        "response": {
+          "output": "订单 SO-1001 当前状态: 已发货, 承运: 顺丰, 预计 3 天内 送达。",
+          "tokenUsage": {
+            "prompt": 8,
+            "completion": 21,
+            "cached": 0,
+            "total": 29,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "cached": false,
+          "latencyMs": 30,
+          "finishReason": "stop",
+          "guardrails": {
+            "flagged": false
+          },
+          "metadata": {
+            "http": {
+              "status": 200,
+              "statusText": "OK",
+              "headers": {
+                "connection": "keep-alive",
+                "content-type": "application/json; charset=utf-8",
+                "date": "Sun, 13 Sep 2026 09:10:35 GMT",
+                "keep-alive": "timeout=5",
+                "transfer-encoding": "chunked",
+                "x-session-id": "probe-session"
+              }
+            }
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "question": "订单 SO-1001 到哪了?"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "SO-1001"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 1,
+        "tokenUsage": {
+          "prompt": 8,
+          "completion": 21,
+          "cached": 0,
+          "total": 29,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "question": "订单 SO-1001 到哪了?"
+        },
+        "metadata": {
+          "http": {
+            "status": 200,
+            "statusText": "OK",
+            "headers": {
+              "connection": "keep-alive",
+              "content-type": "application/json; charset=utf-8",
+              "date": "Sun, 13 Sep 2026 09:10:35 GMT",
+              "keep-alive": "timeout=5",
+              "transfer-encoding": "chunked",
+              "x-session-id": "probe-session"
+            }
+          },
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "javascript",
+                "value": "output.length > 20"
+              }
+            }
+          ]
+        },
+        "id": "fad1abab-d83c-49f3-bcd9-14faae7310b4",
+        "latencyMs": 41,
+        "namedScores": {},
+        "prompt": {
+          "raw": "退货流程怎么走?",
+          "label": "{{question}}",
+          "config": {}
+        },
+        "promptId": "d3bcaf71c11c2678899be04d872718325f0916b3b0705e805ee29930663a42e2",
+        "promptIdx": 0,
+        "provider": {
+          "id": "openai:chat:deepseek-chat",
+          "label": "probe-openai-chat"
+        },
+        "response": {
+          "output": "根据知识库: ## 退货流程\n1. 在订单详情页申请退货, 填写退货原因;\n2. 客服审核通过后, 系统发送退货地址短信;\n3. 使用可追踪物流寄回商品, 填写运单号;\n4. 仓库验收合格后, 退款原路退回, 3-5 个工作日到账。",
+          "tokenUsage": {
+            "prompt": 4,
+            "completion": 58,
+            "cached": 0,
+            "total": 62,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "cached": false,
+          "latencyMs": 41,
+          "finishReason": "stop",
+          "guardrails": {
+            "flagged": false
+          },
+          "metadata": {
+            "http": {
+              "status": 200,
+              "statusText": "OK",
+              "headers": {
+                "connection": "keep-alive",
+                "content-type": "application/json; charset=utf-8",
+                "date": "Sun, 13 Sep 2026 09:10:35 GMT",
+                "keep-alive": "timeout=5",
+                "transfer-encoding": "chunked",
+                "x-session-id": "probe-session"
+              }
+            }
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "vars": {
+            "question": "退货流程怎么走?"
+          },
+          "assert": [
+            {
+              "type": "javascript",
+              "value": "output.length > 20"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 2,
+        "tokenUsage": {
+          "prompt": 4,
+          "completion": 58,
+          "cached": 0,
+          "total": 62,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "question": "退货流程怎么走?"
+        },
+        "metadata": {
+          "http": {
+            "status": 200,
+            "statusText": "OK",
+            "headers": {
+              "connection": "keep-alive",
+              "content-type": "application/json; charset=utf-8",
+              "date": "Sun, 13 Sep 2026 09:10:35 GMT",
+              "keep-alive": "timeout=5",
+              "transfer-encoding": "chunked",
+              "x-session-id": "probe-session"
+            }
+          },
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      }
+    ],
+    "stats": {
+      "successes": 3,
+      "failures": 0,
+      "errors": 0,
+      "tokenUsage": {
+        "prompt": 18,
+        "completion": 118,
+        "cached": 0,
+        "total": 136,
+        "numRequests": 3,
+        "completionDetails": {
+          "reasoning": 0,
+          "acceptedPrediction": 0,
+          "rejectedPrediction": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        },
+        "assertions": {
+          "total": 0,
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "numRequests": 0,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          }
+        }
+      },
+      "durationMs": 82,
+      "evaluationDurationMs": 82
+    }
+  },
+  "config": {
+    "tags": {},
+    "description": "Probe: openai:chat target + apiBaseUrl 接线验证 (mock agent)",
+    "prompts": [
+      "{{question}}"
+    ],
+    "providers": [
+      {
+        "id": "openai:chat:deepseek-chat",
+        "label": "probe-openai-chat",
+        "config": {
+          "apiBaseUrl": "http://localhost:8787/v1",
+          "apiKeyEnvar": "[REDACTED]",
+          "temperature": 0.7,
+          "max_tokens": 256,
+          "headers": {
+            "X-Session-Id": "probe-session"
+          }
+        }
+      }
+    ],
+    "tests": [
+      {
+        "vars": {
+          "question": "你好, 请介绍一下你自己"
+        },
+        "assert": [
+          {
+            "type": "javascript",
+            "value": "output.length > 0"
+          }
+        ]
+      },
+      {
+        "vars": {
+          "question": "订单 SO-1001 到哪了?"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "SO-1001"
+          }
+        ]
+      },
+      {
+        "vars": {
+          "question": "退货流程怎么走?"
+        },
+        "assert": [
+          {
+            "type": "javascript",
+            "value": "output.length > 20"
+          }
+        ]
+      }
+    ],
+    "env": {},
+    "outputPath": [
+      "D:\\Users\\Acer\\Downloads\\pf-ci-timing-main\\tests\\probe-results.json"
+    ],
+    "extensions": [],
+    "metadata": {},
+    "evaluateOptions": {}
+  },
+  "shareableUrl": null,
+  "metadata": {
+    "promptfooVersion": "0.123.0",
+    "nodeVersion": "v24.18.0",
+    "platform": "win32",
+    "arch": "x64",
+    "exportedAt": "2026-09-13T09:10:35.241Z",
+    "evaluationCreatedAt": "2026-09-13T09:10:35.097Z"
+  },
+  "vars": [
+    "question"
+  ],
+  "runtimeOptions": {
+    "eventSource": "cli",
+    "showProgressBar": true,
+    "repeat": 1,
+    "maxConcurrency": 4,
+    "cache": false
+  }
+}

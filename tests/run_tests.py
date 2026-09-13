@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -21,7 +22,8 @@ import urllib.request
 import urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PORT = int(os.environ.get("TEST_PORT", "8899"))
+# 与 configs/promptfooconfig.probe.yaml 的 apiBaseUrl 端口保持一致 (8787)
+PORT = int(os.environ.get("TEST_PORT", "8787"))
 BASE = f"http://127.0.0.1:{PORT}"
 
 results: list[tuple[bool, str]] = []
@@ -49,6 +51,53 @@ def chat(payload: dict, timeout: float = 15.0):
         return e.code, json.loads(e.read().decode("utf-8") or "{}"), {}
 
 
+def wait_port_free(port: int, timeout: float = 15.0) -> bool:
+    """等待端口释放, 避免 Windows 下旧实例残留导致新实例 EADDRINUSE。"""
+    import socket
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        s = socket.socket()
+        s.settimeout(0.3)
+        try:
+            s.connect(("127.0.0.1", port))
+            s.close()
+            time.sleep(0.3)  # 仍有监听者
+        except OSError:
+            s.close()
+            return True
+    return False
+
+
+def start_agent(env_extra: dict) -> subprocess.Popen:
+    wait_port_free(PORT)
+    return subprocess.Popen(["node", "agent/server.js"], cwd=ROOT,
+                            env=dict(os.environ, MOCK_MODEL="1", **env_extra),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+
+
+def wait_healthz(proc: subprocess.Popen) -> int | None:
+    """等待 /healthz 就绪; 返回 agent pid (用于确认没有连到残留实例)。"""
+    for _ in range(50):
+        try:
+            with urllib.request.urlopen(f"{BASE}/healthz", timeout=1) as r:
+                return json.loads(r.read().decode()).get("pid")
+        except Exception:
+            time.sleep(0.2)
+    return None
+
+
+def stop_agent(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        proc.send_signal(signal.CTRL_BREAK_EVENT)
+    else:
+        proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
 def main() -> int:
     print("== 1. 语法检查 ==")
     r = run(["node", "--check", "agent/server.js"])
@@ -58,10 +107,10 @@ def main() -> int:
         check(f"py_compile {script}", r.returncode == 0, r.stderr[:200])
 
     print("== 2. 启动 mock agent ==")
-    env = dict(os.environ, MOCK_MODEL="1", PORT=str(PORT))
+    wait_port_free(PORT)
     proc = subprocess.Popen(
         ["node", "agent/server.js"],
-        cwd=ROOT, env=env,
+        cwd=ROOT, env=dict(os.environ, MOCK_MODEL="1", PORT=str(PORT)),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
@@ -147,10 +196,7 @@ def main() -> int:
     check("失败夹具 -> 退出码 1 (零容忍命中)", r.returncode == 1, r.stdout[-300:])
 
     print("== 4. timing benchmark 冒烟 (mock agent) ==")
-    env = dict(os.environ, MOCK_MODEL="1", PORT=str(PORT))
-    proc = subprocess.Popen(["node", "agent/server.js"], cwd=ROOT, env=env,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
-                            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+    proc = start_agent({})
     try:
         up = False
         for _ in range(50):
@@ -178,6 +224,53 @@ def main() -> int:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+    print("== 5. promptfoo provider 接线探针 (找到 promptfoo 时执行) ==")
+    pf = shutil.which("promptfoo")
+    npx = shutil.which("npx")
+    if pf:
+        pf_cmd = [pf]
+    elif npx:
+        pf_cmd = [npx, "--yes", "promptfoo@0.123.0"]
+    else:
+        pf_cmd = None
+        print("  [SKIP] 未找到 promptfoo/npx, CI validate job 会强制执行此探针")
+
+    if pf_cmd:
+        proc = start_agent({})
+        try:
+            agent_pid = wait_healthz(proc)
+            if agent_pid is None:
+                check("probe: mock agent 启动", False)
+            else:
+                check("probe: 连接的是本测试实例 (pid 一致)", agent_pid == proc.pid,
+                      f"healthz pid={agent_pid}, popen pid={proc.pid}")
+                probe_out = os.path.join(ROOT, "tests", "probe-results.json")
+                r = run(pf_cmd + ["eval", "-c", "configs/promptfooconfig.probe.yaml",
+                                  "--no-write", "--no-cache", "-o", probe_out],
+                        env=dict(os.environ, AGENT_API_KEY="local", PROMPTFOO_DISABLE_TELEMETRY="1"),
+                        timeout=300)
+                probe_ok = False
+                if r.returncode == 0 and os.path.exists(probe_out):
+                    with open(probe_out, "r", encoding="utf-8") as f:
+                        d = json.load(f)
+                    inner = d["results"]["results"] if isinstance(d.get("results"), dict) else d.get("results", [])
+                    probe_ok = bool(inner) and all(x.get("success") for x in inner)
+                check("probe: openai:chat+apiBaseUrl 真实调用 mock agent 全通过", probe_ok,
+                      (r.stdout[-300:] + r.stderr[-200:]))
+                with urllib.request.urlopen(f"{BASE}/healthz", timeout=2) as hz:
+                    sessions = json.loads(hz.read().decode()).get("sessions", 0)
+                check("probe: config.headers 会话头真实送达 agent (sessions>=1)", sessions >= 1,
+                      f"sessions={sessions}")
+        finally:
+            if os.name == "nt":
+                proc.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
     return finish()
 

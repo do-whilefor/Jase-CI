@@ -11,6 +11,7 @@ configs/
   promptfooconfig.agent.yaml           定向: Agent/工具滥用 (过度代理/工具发现/劫持/目标偏移)
   promptfooconfig.rag.yaml             定向: RAG 泄露 (知识库外泄/跨会话/提示词提取)
   promptfooconfig.memory.yaml          定向: 会话记忆 (记忆投毒/PII 会话/跨会话探测)
+  promptfooconfig.probe.yaml           免密探针: 验证 provider 接线 (CI validate job 强制执行)
   promptfooconfig.timing.yaml          promptfoo 侧延迟断言 (latency 阈值)
 agent/
   server.js                            被测应用: OpenAI 兼容客服 Agent
