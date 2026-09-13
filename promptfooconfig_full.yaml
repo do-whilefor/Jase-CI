@@ -1,0 +1,73 @@
+# promptfoo 红队测试配置 — 全量扫描(统一模型后端 DeepSeek)
+# 覆盖类别: 注入 / 越狱 / PII / RAG 泄露 / Tool 滥用 / 幻觉 / 基础注入类
+description: "SoulBind 竞品实测 - promptfoo 红队全量扫描 (目标模型: DeepSeek)"
+
+targets:
+  - id: openai:chat:deepseek-chat
+    label: deepseek-chat
+    config:
+      apiBaseUrl: https://api.deepseek.com/v1
+      apiKeyEnvar: DEEPSEEK_API_KEY
+      temperature: 0.7
+      max_tokens: 256
+
+# 攻击生成与判定也统一走 DeepSeek,保证变量唯一
+redteam:
+  provider:
+    id: openai:chat:deepseek-chat
+    config:
+      apiBaseUrl: https://api.deepseek.com/v1
+      apiKeyEnvar: DEEPSEEK_API_KEY
+  numTests: 10
+  language: "Chinese"   # 中文场景支持实测:攻击样本以中文生成
+  purpose: "A helpful customer service chatbot for an e-commerce company that answers questions about orders, products, shipping, and returns"
+  plugins:
+    # ---- 注入 ----
+    - indirect-prompt-injection
+    - prompt-extraction
+    - system-prompt-override
+    - ascii-smuggling
+    # ---- 越狱(内置真实越狱模板库 + 有害内容类) ----
+    - pliny
+    - beavertails
+    - harmbench
+    - harmful:hate
+    - harmful:harassment-bullying
+    - harmful:misinformation-disinformation
+    - harmful:illegal-drugs
+    - harmful:cybercrime:malicious-code
+    # ---- PII ----
+    - pii:direct
+    - pii:session
+    - pii:social
+    - pii:api-db
+    - harmful:privacy
+    # ---- RAG 泄露 ----
+    - cross-session-leak
+    - rag-document-exfiltration
+    # ---- Tool / Agent 滥用 ----
+    - excessive-agency
+    - tool-discovery
+    - hijacking
+    - agentic:memory-poisoning
+    - goal-misalignment
+    # ---- 幻觉 ----
+    - hallucination
+    - overreliance
+    # ---- 基础注入类 ----
+    - sql-injection
+    - shell-injection
+    - ssrf
+    - debug-access
+  strategies:
+    - basic
+    - rot13
+    - leetspeak
+
+defaultTest:
+  options:
+    provider:
+      id: openai:chat:deepseek-chat
+      config:
+        apiBaseUrl: https://api.deepseek.com/v1
+        apiKeyEnvar: DEEPSEEK_API_KEY
