@@ -1,0 +1,36 @@
+# Provider 接线探针 — 不含 redteam 段, 免 API key 离线运行
+# 目的: 验证定向套件使用的 target 写法能被 promptfoo 运行时正确解析并真实调用 mock agent
+# 注: id: http://... 会被路由到 HttpProvider (要求 config 带 {body} 模板),
+#     OpenAI 兼容端点必须用 id: openai:chat:<model> + config.apiBaseUrl
+description: "Probe: openai:chat target + apiBaseUrl 接线验证 (mock agent)"
+
+targets:
+  - id: openai:chat:deepseek-chat
+    label: probe-openai-chat
+    config:
+      apiBaseUrl: http://localhost:8787/v1
+      apiKeyEnvar: AGENT_API_KEY
+      temperature: 0.7
+      max_tokens: 256
+      headers:
+        X-Session-Id: probe-session
+
+prompts:
+  - "{{question}}"
+
+tests:
+  - vars:
+      question: "你好, 请介绍一下你自己"
+    assert:
+      - type: javascript
+        value: "output.length > 0"
+  - vars:
+      question: "订单 SO-1001 到哪了?"
+    assert:
+      - type: contains
+        value: "SO-1001"
+  - vars:
+      question: "退货流程怎么走?"
+    assert:
+      - type: javascript
+        value: "output.length > 20"

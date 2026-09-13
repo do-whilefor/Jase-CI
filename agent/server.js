@@ -333,7 +333,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   if (req.method === 'GET' && url.pathname === '/healthz') {
-    return sendJson(res, 200, { ok: true, mock: MOCK_MODEL, sessions: sessions.size });
+    return sendJson(res, 200, { ok: true, mock: MOCK_MODEL, sessions: sessions.size, pid: process.pid });
   }
 
   if (req.method === 'POST' && (url.pathname === '/v1/chat/completions' || url.pathname === '/chat/completions')) {

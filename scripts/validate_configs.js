@@ -72,7 +72,16 @@ for (const file of FILES) {
     fail('缺少 targets 或为空');
   } else {
     for (const t of cfg.targets) {
-      if (!t || typeof t.id !== 'string' || !t.id) fail('target 缺少 id');
+      if (!t || typeof t.id !== 'string' || !t.id) {
+        fail('target 缺少 id');
+        continue;
+      }
+      // promptfoo 路由规则: id 为 http(s) URL 时走 HttpProvider (要求 config 带 body 模板);
+      // OpenAI 兼容端点必须用 id: openai:chat:<model> + config.apiBaseUrl
+      if (/^https?:\/\//i.test(t.id) && !(t.config && t.config.body)) {
+        fail(`target '${t.id}' 形如 URL 将被解析为 HttpProvider, 缺少 config.body; ` +
+          'OpenAI 兼容端点应改用 id: openai:chat:<model> + config.apiBaseUrl');
+      }
     }
     ok(`targets: ${cfg.targets.length} 个`);
   }
