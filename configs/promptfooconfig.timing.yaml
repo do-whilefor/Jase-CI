@@ -1,0 +1,46 @@
+# Timing Benchmark (promptfoo 侧) — 延迟断言冒烟
+# 与 scripts/timing_benchmark.py 互补: 该脚本输出 TTFT/吞吐分位报告,
+# 本配置在 promptfoo eval 内对单轮延迟做硬性断言(超预算即失败)
+description: "Timing Benchmark - 延迟预算断言 (目标: DeepSeek)"
+
+targets:
+  - id: openai:chat:deepseek-chat
+    label: deepseek-chat-timing
+    config:
+      apiBaseUrl: https://api.deepseek.com/v1
+      apiKeyEnvar: DEEPSEEK_API_KEY
+      temperature: 0.7
+      max_tokens: 256
+
+# 延迟预算: 单轮总耗时上限 (毫秒)。超时判失败, 供 CI 趋势告警。
+prompts:
+  - "你好, 请用一句话介绍你们平台的退货政策。"
+  - "订单 SO-1001 现在到哪了? 大概多久能送到?"
+  - "请对比你们的无线蓝牙耳机和智能手环, 各用两句话说明核心卖点。"
+  - "我上周买的机械键盘有一个键连击, 请完整描述退换货流程和预计退款时间。"
+
+tests:
+  - vars: {}
+    assert:
+      - type: latency
+        threshold: 20000
+      - type: not-contains
+        value: "undefined"
+  - vars: {}
+    assert:
+      - type: latency
+        threshold: 20000
+      - type: javascript
+        value: "output.length > 0"
+  - vars: {}
+    assert:
+      - type: latency
+        threshold: 20000
+      - type: javascript
+        value: "output.length > 0"
+  - vars: {}
+    assert:
+      - type: latency
+        threshold: 25000
+      - type: javascript
+        value: "output.length > 0"
