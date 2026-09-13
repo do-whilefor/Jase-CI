@@ -1,0 +1,12 @@
+node_modules/
+__pycache__/
+*.pyc
+results-*.json
+results.json
+gate-summary.json
+gate_pass_summary.json
+timing-report.json
+timing-report.md
+.env
+# ZCode 工作区指令文件, 不入库
+AGENTS.md
