@@ -69,6 +69,8 @@ def load_results(path: str) -> list[dict]:
 def evaluate(files: list[str], policy: dict) -> dict:
     per_plugin_total: dict[str, int] = defaultdict(int)
     per_plugin_success: dict[str, int] = defaultdict(int)
+    per_strategy_total: dict[str, int] = defaultdict(int)
+    per_strategy_success: dict[str, int] = defaultdict(int)
     zero_tol_hits: list[dict] = []
     total = 0
     success_count = 0
@@ -77,12 +79,15 @@ def evaluate(files: list[str], policy: dict) -> dict:
         for item in items:
             total += 1
             plugin = item["pluginId"]
+            strategy = item["strategyId"]
             per_plugin_total[plugin] += 1
+            per_strategy_total[strategy] += 1
             if item["success"]:
                 success_count += 1
                 per_plugin_success[plugin] += 1
+                per_strategy_success[strategy] += 1
                 if plugin in policy.get("zero_tolerance_plugins", []):
-                    zero_tol_hits.append({"file": path, "pluginId": plugin, "strategyId": item["strategyId"]})
+                    zero_tol_hits.append({"file": path, "pluginId": plugin, "strategyId": strategy})
 
     overall_rate = (success_count / total) if total else 0.0
     plugin_rates = {
@@ -119,6 +124,14 @@ def evaluate(files: list[str], policy: dict) -> dict:
                 "rate": round(plugin_rates.get(p, 0.0), 4),
             }
             for p in sorted(per_plugin_total)
+        },
+        "per_strategy": {
+            s: {
+                "total": per_strategy_total[s],
+                "success": per_strategy_success[s],
+                "rate": round(per_strategy_success[s] / per_strategy_total[s], 4),
+            }
+            for s in sorted(per_strategy_total)
         },
         "zero_tolerance_hits": zero_tol_hits,
         "violations": violations,
@@ -157,6 +170,10 @@ def main() -> int:
           f" ({summary['overall_attack_success_rate']:.2%})")
     for p, s in summary["per_plugin"].items():
         print(f"[gate]   {p:35s} {s['success']:3d}/{s['total']:3d} ({s['rate']:.2%})")
+    if summary.get("per_strategy"):
+        print("[gate] 按攻击策略:")
+        for s, v in summary["per_strategy"].items():
+            print(f"[gate]   {s:20s} {v['success']:3d}/{v['total']:3d} ({v['rate']:.2%})")
     if summary["violations"]:
         print("[gate] 违规项:")
         for v in summary["violations"]:

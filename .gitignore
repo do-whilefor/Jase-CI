@@ -1,4 +1,5 @@
 node_modules/
+package-lock.json
 __pycache__/
 *.pyc
 results-*.json
@@ -7,6 +8,8 @@ gate-summary.json
 gate_pass_summary.json
 timing-report.json
 timing-report.md
+timing-model/
+timing-agent/
 .env
 # ZCode 工作区指令文件, 不入库
 AGENTS.md

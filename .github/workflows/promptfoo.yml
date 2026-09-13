@@ -28,8 +28,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 安装 promptfoo (供配置校验解析 YAML)
-        run: npm install -g promptfoo@0.123.0
+      - name: 安装 promptfoo (供配置校验解析 YAML 与接线探针)
+        run: |
+          npm install -g promptfoo@0.123.0
+          npm install --no-save --no-package-lock yaml
 
       - name: 配置结构校验 (语法/插件/凭证注入方式)
         run: node scripts/validate_configs.js
@@ -131,22 +133,47 @@ jobs:
 
   # ------------------------------------------------------------------
   # 3. Timing Benchmark — 时延/吞吐基准与预算门禁
+  #    双视角: 裸模型直连 vs Agent 全链路 (工具/RAG/记忆开销)
   # ------------------------------------------------------------------
   timing-benchmark:
     runs-on: ubuntu-latest
     needs: validate
+    timeout-minutes: 30
     env:
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: 时延基准 (DeepSeek 直连, p95 超预算即失败)
+      - name: 启动被测 Agent (真实模式, 供 Agent 视角基准)
         if: env.DEEPSEEK_API_KEY != ''
-        run: python3 scripts/timing_benchmark.py --outdir .
+        run: |
+          nohup node agent/server.js > agent-timing.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8787/healthz && break
+            sleep 1
+          done
+          curl -sf http://localhost:8787/healthz
+
+      - name: "时延基准 - 裸模型 (DeepSeek 直连, p95 超预算即失败)"
+        if: env.DEEPSEEK_API_KEY != ''
+        run: python3 scripts/timing_benchmark.py --outdir timing-model
+
+      - name: "时延基准 - Agent 全链路 (含工具/RAG/记忆, p95 预算 30s)"
+        if: env.DEEPSEEK_API_KEY != ''
+        env:
+          TARGET_BASE_URL: http://localhost:8787/v1
+          TARGET_API_KEY: local-agent-key
+          TARGET_MODEL: deepseek-chat
+          TIMING_BUDGET_MS: "30000"
+        run: python3 scripts/timing_benchmark.py --outdir timing-agent
 
       - name: 上传时延报告
         if: always()
@@ -154,6 +181,7 @@ jobs:
         with:
           name: timing-report
           path: |
-            timing-report.json
-            timing-report.md
+            timing-model/**
+            timing-agent/**
+            agent-timing.log
           if-no-files-found: ignore

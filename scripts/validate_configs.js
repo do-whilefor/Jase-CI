@@ -37,8 +37,9 @@ function loadYaml() {
 }
 yaml = loadYaml();
 if (!yaml) {
-  console.error('错误: 无法加载 yaml 模块。请先安装 promptfoo (npm i -g promptfoo),');
-  console.error('或设置 PROMPTFOO_NODE_MODULES 指向 promptfoo 的 node_modules 目录。');
+  console.error('错误: 无法加载 yaml 模块。请先在项目根目录执行:');
+  console.error('  npm install --no-save --no-package-lock yaml');
+  console.error('或设置 PROMPTFOO_NODE_MODULES 指向含 yaml 的 node_modules 目录。');
   process.exit(2);
 }
 
