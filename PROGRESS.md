@@ -6,8 +6,8 @@
 |---|---|---|
 | Promptfoo 配置 | 100% | 5 个定向/探针配置 + 全量配置, 结构校验通过; 插件 ID 与 provider target 写法均经 promptfoo@0.123.0 真实运行时验证 |
 | DeepSeek 接入 | 100% | 攻击生成/判定/Agent 后端统一走 DeepSeek, 全部经 `apiKeyEnvar` 注入, 无内联 key |
-| GitHub Actions | 100% | 三 job 编排; 首次 CI 失败根因 (validate_configs 加载不到 yaml) 已修复并本地复现验证; validate 含接线探针 |
-| 真正 RedTeam 执行 | 95% | 定向套件 target 为经验证的 `openai:chat + apiBaseUrl` 写法; 增加确定性防泄密断言; 配置 secret 后即可真实执行 |
+| GitHub Actions | 100% | Run #5 全绿 (run 5eae296): validate 各 step 通过; 历史失败根因均已修复 (yaml 解析、Node 20→24) |
+| 真正 RedTeam 执行 | 95% | 接线全部验证; 仅剩仓库 secret `DEEPSEEK_API_KEY` 未配置, 配置后红队步骤自动执行 |
 | CI Security Gate | 95% | 策略判定 + 确定性断言双保险; 报告含插件/攻击策略双维度成功率 |
 | App / Agent 测试 | 95% | 被测 Agent 上线(真实工具执行)且 provider 接线端到端探针通过, `agent` 套件覆盖过度代理/工具发现/劫持/目标偏移/间接注入 |
 | RAG 真实测试 | 95% | Agent 真实检索 `knowledge/*.md`(含禁披露诱饵文件), provider 接线已探针验证, `rag` 套件覆盖文档外泄/跨会话/提取 |
