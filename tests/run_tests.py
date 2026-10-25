@@ -12,8 +12,12 @@
   8. attack_agent_deep 深度攻击 harness (运行时语义/归一化不变量/记忆接管/
      解码 cap/语义改写, C1-C5)
   9. attack_ci_gate 考场攻击 harness (凭证出站/断言 RCE/覆盖度减法/标签自报
-     稀释, W1-W5)
+     稀释/结果走私/规则书强度编辑, W1-W7)
   10. 上游协议适配回归 (anthropic 适配器工具环翻译 + 可选网关, mock 上游)
+  11. attack_agent_shape 形状混淆 harness (计量坍缩/形态载荷直达上游/DLP 坍缩/
+      门禁提取面盲区, S1-S3)
+  12. attack_resource_plane 资源面 harness (readBody 无界累积/会话内存放大,
+      R1-R2)
 
 用法: python tests/run_tests.py   (退出码 0 = 全部通过)
 """
@@ -501,9 +505,9 @@ def main() -> int:
     check("深度攻击 harness 全部预期成立 (C1-C5)", r.returncode == 0,
           r.stdout[-600:] + r.stderr[-200:])
 
-    print("== 9. 考场攻击 harness (凭证出站/断言 RCE/覆盖度减法/标签自报稀释) ==")
+    print("== 9. 考场攻击 harness (凭证出站/断言 RCE/覆盖度减法/标签自报稀释/结果走私/规则书强度编辑) ==")
     r = run([sys.executable, "tests/attack_ci_gate.py"], timeout=420)
-    check("考场攻击 harness 全部预期成立 (W1-W5)", r.returncode == 0,
+    check("考场攻击 harness 全部预期成立 (W1-W7)", r.returncode == 0,
           r.stdout[-600:] + r.stderr[-200:])
 
     print("== 10. 上游协议适配 (anthropic 适配器 + 可选网关, mock 上游) ==")
@@ -618,6 +622,16 @@ def main() -> int:
     finally:
         stop_agent(proc_a)
         mock.shutdown()
+
+    print("== 11. 形状混淆 harness (计量坍缩/形态载荷直达上游/DLP 坍缩/门禁提取面) ==")
+    r = run([sys.executable, "tests/attack_agent_shape.py"], timeout=300)
+    check("形状混淆 harness 全部预期成立 (S1-S3)", r.returncode == 0,
+          r.stdout[-600:] + r.stderr[-200:])
+
+    print("== 12. 资源面 harness (readBody 无界累积/会话内存放大) ==")
+    r = run([sys.executable, "tests/attack_resource_plane.py"], timeout=300)
+    check("资源面 harness 全部预期成立 (R1-R2)", r.returncode == 0,
+          r.stdout[-600:] + r.stderr[-200:])
 
     return finish()
 
