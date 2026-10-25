@@ -15,7 +15,6 @@ const fs = require('fs');
 const path = require('path');
 
 let yaml;
-const yamlSearchPaths = [];
 function loadYaml() {
   try {
     return require('yaml');
@@ -28,9 +27,7 @@ function loadYaml() {
   for (const base of [process.env.PROMPTFOO_NODE_MODULES, globalRoot && path.join(globalRoot, 'promptfoo', 'node_modules'), globalRoot]) {
     if (!base) continue;
     try {
-      const mod = require(path.join(base, 'yaml'));
-      yamlSearchPaths.push(base);
-      return mod;
+      return require(path.join(base, 'yaml'));
     } catch { /* 下一个候选 */ }
   }
   return null;
@@ -55,6 +52,9 @@ const WORKFLOW = path.join(__dirname, '..', '.github', 'workflows', 'promptfoo.y
 let failed = false;
 const fail = (msg) => { console.error(`  [FAIL] ${msg}`); failed = true; };
 const ok = (msg) => console.log(`  [OK]   ${msg}`);
+
+// 各套件启用的红队插件 -> 使用它的配置文件列表 (供策略一致性交叉校验)
+const suitePlugins = new Map();
 
 for (const file of FILES) {
   const rel = path.relative(path.join(__dirname, '..'), file);
@@ -98,18 +98,40 @@ for (const file of FILES) {
       if (dupes.length) fail(`redteam.plugins 重复: ${[...new Set(dupes)].join(', ')}`);
       if (!rt.plugins.every((p) => typeof p === 'string' && p.length)) fail('redteam.plugins 含非法条目');
       ok(`plugins: ${rt.plugins.length} 个 (无重复)`);
+      for (const p of rt.plugins) {
+        if (!suitePlugins.has(p)) suitePlugins.set(p, []);
+        suitePlugins.get(p).push(rel);
+      }
     }
     if (rt.numTests !== undefined && !(Number(rt.numTests) > 0)) fail('redteam.numTests 必须 > 0');
     if (typeof rt.purpose !== 'string' || !rt.purpose) fail('redteam.purpose 缺失 (影响攻击生成质量)');
+    // 自定义攻击策略 (custom:<变体>) 必须提供 strategyText 手稿
+    if (Array.isArray(rt.strategies)) {
+      for (const s of rt.strategies) {
+        const sid = typeof s === 'string' ? s : s && s.id;
+        if (s && typeof s === 'object' && typeof sid === 'string' && sid.startsWith('custom')) {
+          if (!s.config || typeof s.config.strategyText !== 'string' || !s.config.strategyText.trim()) {
+            fail(`自定义策略 '${sid}' 缺少 config.strategyText 手稿`);
+          } else {
+            ok(`自定义策略 '${sid}' (含手稿)`);
+          }
+        }
+      }
+    }
   } else {
     // 普通评测配置: prompts/tests 断言
     if (!Array.isArray(cfg.prompts) || cfg.prompts.length === 0) fail('缺少 prompts');
     if (Array.isArray(cfg.tests)) {
+      // 每条 test 自带 assert, 或由 defaultTest.assert 统一提供均可
+      const hasDefaultAssert =
+        cfg.defaultTest && Array.isArray(cfg.defaultTest.assert) && cfg.defaultTest.assert.length > 0;
       for (let i = 0; i < cfg.tests.length; i++) {
         const asserts = cfg.tests[i] && cfg.tests[i].assert;
-        if (!Array.isArray(asserts) || !asserts.length) fail(`tests[${i}] 缺少 assert`);
+        if (!Array.isArray(asserts) || !asserts.length) {
+          if (!hasDefaultAssert) fail(`tests[${i}] 缺少 assert (且无 defaultTest.assert 兜底)`);
+        }
       }
-      ok(`tests: ${cfg.tests.length} 条 (均含 assert)`);
+      ok(`tests: ${cfg.tests.length} 条 (${hasDefaultAssert ? 'defaultTest 统一断言' : '均含 assert'})`);
     } else {
       fail('缺少 tests');
     }
@@ -122,6 +144,37 @@ for (const file of FILES) {
   } else if (text.includes('deepseek')) {
     ok('DeepSeek 凭证通过 apiKeyEnvar 注入');
   }
+}
+
+// gate_policy.json ↔ 套件插件一致性: 套件启用的插件必须登记零容忍或上限,
+// 否则该插件只受整体成功率约束, 等于处于无单插件上限状态
+const POLICY_FILE = path.join(__dirname, 'gate_policy.json');
+if (fs.existsSync(POLICY_FILE)) {
+  const failedBefore = failed;
+  console.log('校验 gate_policy.json ↔ 红队套件插件一致性:');
+  let policy = null;
+  try {
+    policy = JSON.parse(fs.readFileSync(POLICY_FILE, 'utf8'));
+  } catch (e) {
+    fail(`gate_policy.json 解析失败: ${e.message}`);
+  }
+  if (policy) {
+    const zeroTol = new Set(policy.zero_tolerance_plugins || []);
+    const capped = new Set(Object.keys(policy.plugin_max_success_rate || {}));
+    for (const [plugin, usedIn] of suitePlugins) {
+      if (!zeroTol.has(plugin) && !capped.has(plugin)) {
+        fail(`插件 '${plugin}' (用于 ${usedIn.join(', ')}) 未在 gate_policy.json 登记零容忍或成功率上限`);
+      }
+    }
+    for (const p of [...zeroTol, ...capped]) {
+      if (!suitePlugins.has(p)) {
+        console.warn(`  [WARN] 策略中的插件 '${p}' 未被任何套件启用`);
+      }
+    }
+    if (failed === failedBefore) ok(`套件插件 ${suitePlugins.size} 个均已登记`);
+  }
+} else {
+  console.warn('  [WARN] 未找到 gate_policy.json, 跳过策略一致性校验');
 }
 
 // GitHub Actions 工作流语法校验

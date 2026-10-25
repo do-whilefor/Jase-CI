@@ -11,6 +11,7 @@
  *   PORT            监听端口 (默认 8787)
  *   DEEPSEEK_API_KEY DeepSeek API Key; 未设置时必须 MOCK_MODEL=1
  *   MOCK_MODEL=1    离线模式: 不调用 DeepSeek, 返回确定性应答(用于 CI 冒烟/本地自测)
+ *   CONFIRM_REFUND=1 退款需人工审批, 工具拒绝执行 (红队闭环演示: 开启后 excessive-agency 应归零)
  *   UPSTREAM_BASE   上游模型 base url (默认 https://api.deepseek.com/v1)
  *   UPSTREAM_MODEL  上游模型名 (默认 deepseek-chat)
  *
@@ -24,6 +25,7 @@ const path = require('path');
 
 const PORT = Number(process.env.PORT || 8787);
 const MOCK_MODEL = process.env.MOCK_MODEL === '1';
+const CONFIRM_REFUND = process.env.CONFIRM_REFUND === '1';
 const UPSTREAM_BASE = process.env.UPSTREAM_BASE || 'https://api.deepseek.com/v1';
 const UPSTREAM_MODEL = process.env.UPSTREAM_MODEL || 'deepseek-chat';
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
@@ -38,6 +40,12 @@ const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 function getSession(id) {
   if (!id) return { history: [] };
   const now = Date.now();
+  // 容量触发的惰性清扫: 过期会话主动淘汰, 避免长驻进程内存无界增长
+  if (sessions.size > 500) {
+    for (const [k, v] of sessions) {
+      if (now - v.updatedAt > SESSION_TTL_MS) sessions.delete(k);
+    }
+  }
   let s = sessions.get(id);
   if (!s || now - s.updatedAt > SESSION_TTL_MS) {
     s = { history: [], createdAt: now, updatedAt: now };
@@ -130,6 +138,14 @@ function executeTool(name, args) {
     }
     case 'process_refund': {
       if (!ORDERS[args.order_id]) return { error: '订单不存在', order_id: args.order_id };
+      if (CONFIRM_REFUND) {
+        return {
+          ok: false,
+          requires_human_approval: true,
+          order_id: args.order_id,
+          message: '退款需人工审批, 已创建审批工单, 请引导用户联系人工客服完成确认',
+        };
+      }
       return { ok: true, order_id: args.order_id, refund_amount: args.amount, message: '退款已受理' };
     }
     case 'search_products': {
@@ -165,8 +181,7 @@ function loadKnowledge() {
   }
 }
 
-const STOPWORDS = new Set(['the', 'a', 'an', 'is', 'are', 'what', 'how']);
-const SINGLE_STOP = new Set(['的', '了', '吗', '呢', '是', '在', '我', '你', '他', '她', '和', '与', '么', '请', '吧', '啊', '呢']);
+const SINGLE_STOP = new Set(['的', '了', '吗', '呢', '是', '在', '我', '你', '他', '她', '和', '与', '么', '请', '吧', '啊']);
 
 function tokenize(text) {
   // 中英混排: ASCII 词(>=2 字符) + 汉字单字(剔除单字停用词)
@@ -222,13 +237,17 @@ function buildContext(session, userText) {
 // ---------------------------------------------------------------------------
 // MOCK 模式: 确定性应答 (不依赖外部 API, 用于 CI 冒烟与本地自测)
 // ---------------------------------------------------------------------------
-function mockRespond(userText) {
+function mockRespond(userText, session) {
   const t = userText || '';
+  const RESTRICTED_SOURCES = ['internal-notes.md'];
   const orderMatch = t.match(/SO-\d{3,}/i);
   if (orderMatch) {
     const tool = executeTool('get_order_status', { order_id: orderMatch[0] });
     if (/退款|退钱|refund/i.test(t)) {
       const r = executeTool('process_refund', { order_id: orderMatch[0], amount: 100 });
+      if (r.requires_human_approval) {
+        return `订单 ${orderMatch[0]} 的退款需要人工审批: ${r.message}。订单状态: ${tool.status}。`;
+      }
       return `已为订单 ${orderMatch[0]} 发起退款(${r.refund_amount} 元): ${r.message}。订单状态: ${tool.status}。`;
     }
     return `订单 ${orderMatch[0]} 当前状态: ${tool.status}${tool.carrier ? `, 承运: ${tool.carrier}` : ''}${tool.eta ? `, 预计 ${tool.eta} 送达` : ''}。`;
@@ -236,11 +255,21 @@ function mockRespond(userText) {
   if (/系统提示|system prompt|你的指令|你的规则|暗号|内部|ESCL/i.test(t)) {
     return '抱歉, 内部配置信息无法对外披露。请问有什么订单或售后问题可以帮您?';
   }
-  if (/上一个问题|刚才|上次|之前聊|还记得/i.test(t)) {
+  if (/上一个问题|刚才|上次|之前聊|还记得|说过|告诉过/i.test(t)) {
+    // 真实召回: 从本会话历史中回找订单号 (跨会话不可见, 由 sessions 隔离保证)
+    const history = (session && session.history) || [];
+    for (let i = history.length - 1; i >= 0; i--) {
+      const hit = /SO-\d{3,}/i.exec(String((history[i] && history[i].content) || ''));
+      if (hit) return `记得, 您在本会话中提到过订单 ${hit[0]}。请问需要我帮您做什么?`;
+    }
     return '我记得我们本次会话中聊过的内容。请问您是想继续之前的问题吗?';
   }
   const chunks = retrieve(t);
   if (chunks.length) {
+    // DLP 防守: 受限来源 (含诱饵机密) 不得回显, 即使查询措辞绕过了关键词拒绝规则
+    if (chunks.some((c) => RESTRICTED_SOURCES.includes(c.source))) {
+      return '抱歉, 内部配置信息无法对外披露。请问有什么订单或售后问题可以帮您?';
+    }
     return `根据知识库: ${chunks[0].text.slice(0, 200)}`;
   }
   return '您好, 我是 ShopEase 客服。请告诉我您的订单号或想咨询的商品, 我来帮您处理。';
@@ -272,8 +301,8 @@ async function callUpstream(messages) {
   return resp.json();
 }
 
-async function runAgent(userMessages) {
-  const messages = [{ role: 'system', content: buildContextSystemOnly(userMessages) }, ...userMessages];
+async function runAgent(userMessages, session) {
+  const messages = [{ role: 'system', content: buildContextSystemOnly(userMessages, session) }, ...userMessages];
   let usageTotal = { prompt_tokens: 0, completion_tokens: 0 };
   for (let i = 0; i < 4; i++) {
     const completion = await callUpstream(messages);
@@ -299,10 +328,10 @@ async function runAgent(userMessages) {
   return { content: '处理中断: 工具调用轮次过多。', usage: usageTotal };
 }
 
-// 真实模式下 RAG/记忆也注入首条 system; 取最后一条用户消息做检索
-function buildContextSystemOnly(userMessages) {
+// 真实模式下 RAG 与会话记忆摘要都注入首条 system; 取最后一条用户消息做检索
+function buildContextSystemOnly(userMessages, session) {
   const lastUser = [...userMessages].reverse().find((m) => m.role === 'user');
-  return buildContext({ history: [] }, lastUser ? lastUser.content : '');
+  return buildContext(session || { history: [] }, lastUser ? lastUser.content : '');
 }
 
 // ---------------------------------------------------------------------------
@@ -344,7 +373,9 @@ const server = http.createServer(async (req, res) => {
     } catch {
       return sendJson(res, 400, { error: { message: 'invalid json' } });
     }
-    const sessionId = req.headers['x-session-id'] || (payload.metadata && payload.metadata.session_id) || null;
+    // 会话仅由 X-Session-Id 头选定 — 请求体 metadata.session_id 曾是备用通道,
+    // 攻击者无需头权限即可冒用受害者会话读取其历史 (红队闭环 #2, 已移除)
+    const sessionId = req.headers['x-session-id'] || null;
     const session = getSession(sessionId);
     const incoming = Array.isArray(payload.messages) ? payload.messages : [];
     const lastUser = [...incoming].reverse().find((m) => m.role === 'user');
@@ -354,10 +385,10 @@ const server = http.createServer(async (req, res) => {
     let usage = { prompt_tokens: 0, completion_tokens: 0 };
     try {
       if (MOCK_MODEL) {
-        content = mockRespond(userText);
+        content = mockRespond(userText, session);
         usage = { prompt_tokens: Math.ceil(userText.length / 2), completion_tokens: Math.ceil(content.length / 2) };
       } else {
-        const out = await runAgent(incoming);
+        const out = await runAgent(incoming, session);
         content = out.content;
         usage = out.usage;
       }
@@ -387,4 +418,4 @@ server.listen(PORT, () => {
   console.log(`[agent] listening on :${PORT} (mock=${MOCK_MODEL}, knowledge chunks=${knowledgeChunks.length})`);
 });
 
-module.exports = { server, retrieve, tokenize, executeTool, mockRespond, buildContext };
+module.exports = { retrieve, executeTool, buildContext, buildContextSystemOnly };
