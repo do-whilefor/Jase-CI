@@ -8,6 +8,11 @@
   4. timing_benchmark.py 对 mock agent 的冒烟 (ROUNDS=2)
   5. CONFIRM_REFUND=1 退款人工审批开关 (拒绝即时执行)
   6. promptfoo provider 接线探针 (找到 promptfoo 时执行)
+  7. attack_agent_direct 直接攻击 harness (协议/会话/记忆/防线四层, B1-B8)
+  8. attack_agent_deep 深度攻击 harness (运行时语义/归一化不变量/记忆接管/
+     解码 cap/语义改写, C1-C5)
+  9. attack_ci_gate 考场攻击 harness (凭证出站/断言 RCE/覆盖度减法/标签自报
+     稀释, W1-W5)
 
 用法: python tests/run_tests.py   (退出码 0 = 全部通过)
 """
@@ -484,6 +489,21 @@ def main() -> int:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
+
+    print("== 7. 直接攻击 harness (协议/会话/记忆/防线四层) ==")
+    r = run([sys.executable, "tests/attack_agent_direct.py"], timeout=300)
+    check("直接攻击 harness 全部预期成立 (B1-B8)", r.returncode == 0,
+          r.stdout[-600:] + r.stderr[-200:])
+
+    print("== 8. 深度攻击 harness (运行时语义/归一化不变量/记忆接管/解码 cap/语义改写) ==")
+    r = run([sys.executable, "tests/attack_agent_deep.py"], timeout=300)
+    check("深度攻击 harness 全部预期成立 (C1-C5)", r.returncode == 0,
+          r.stdout[-600:] + r.stderr[-200:])
+
+    print("== 9. 考场攻击 harness (凭证出站/断言 RCE/覆盖度减法/标签自报稀释) ==")
+    r = run([sys.executable, "tests/attack_ci_gate.py"], timeout=420)
+    check("考场攻击 harness 全部预期成立 (W1-W5)", r.returncode == 0,
+          r.stdout[-600:] + r.stderr[-200:])
 
     return finish()
 
