@@ -6,7 +6,7 @@
 description: "攻击手法回放套件 (确定性 TTP, 免密)"
 
 targets:
-  - id: openai:chat:deepseek-chat
+  - id: openai:chat:agent-under-test
     label: shopease-agent-replay
     config:
       apiBaseUrl: http://localhost:8787/v1

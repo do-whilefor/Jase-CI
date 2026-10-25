@@ -13,6 +13,7 @@
      解码 cap/语义改写, C1-C5)
   9. attack_ci_gate 考场攻击 harness (凭证出站/断言 RCE/覆盖度减法/标签自报
      稀释, W1-W5)
+  10. 上游协议适配回归 (anthropic 适配器工具环翻译 + 可选网关, mock 上游)
 
 用法: python tests/run_tests.py   (退出码 0 = 全部通过)
 """
@@ -504,6 +505,119 @@ def main() -> int:
     r = run([sys.executable, "tests/attack_ci_gate.py"], timeout=420)
     check("考场攻击 harness 全部预期成立 (W1-W5)", r.returncode == 0,
           r.stdout[-600:] + r.stderr[-200:])
+
+    print("== 10. 上游协议适配 (anthropic 适配器 + 可选网关, mock 上游) ==")
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    hits = {"last": None}
+
+    class AnthropicMock(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            tool_turn = any(isinstance(c, dict) and c.get("type") == "tool_result"
+                            for m in body.get("messages", []) for c in (m.get("content") or []))
+            hits["last"] = {
+                "auth": self.headers.get("x-api-key"),
+                "version": self.headers.get("anthropic-version"),
+                "system_ok": isinstance(body.get("system"), str) and "ShopEase" in body["system"],
+                "tools_ok": len(body.get("tools", [])) == 4
+                            and all(t.get("input_schema") for t in body.get("tools", [])),
+                "tool_result_ok": tool_turn,
+            }
+            if tool_turn:
+                resp = {"content": [{"type": "text",
+                                     "text": "查询完成: 订单 SO-1001 当前状态: 已发货"}],
+                        "usage": {"input_tokens": 90, "output_tokens": 20}}
+            else:
+                resp = {"content": [{"type": "tool_use", "id": "toolu_1",
+                                     "name": "get_order_status",
+                                     "input": {"order_id": "SO-1001"}}],
+                        "usage": {"input_tokens": 70, "output_tokens": 10}}
+            payload = json.dumps(resp).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *a):
+            pass
+
+    mock = ThreadingHTTPServer(("127.0.0.1", 8981), AnthropicMock)
+    threading.Thread(target=mock.serve_forever, daemon=True).start()
+    proc_a = subprocess.Popen(
+        ["node", "agent/server.js"], cwd=ROOT,
+        env=dict(os.environ, PORT="8982", UPSTREAM_PROTOCOL="anthropic",
+                 UPSTREAM_BASE="http://127.0.0.1:8981", UPSTREAM_MODEL="claude-test-1",
+                 UPSTREAM_API_KEY="sk-fake", UPSTREAM_GATEWAY="1"),
+        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+    try:
+        up = False
+        for _ in range(50):
+            try:
+                urllib.request.urlopen("http://127.0.0.1:8982/healthz", timeout=1)
+                up = True
+                break
+            except Exception:
+                time.sleep(0.2)
+        if not up:
+            check("anthropic 适配 agent 启动", False)
+        else:
+            req = urllib.request.Request(
+                "http://127.0.0.1:8982/v1/chat/completions",
+                data=json.dumps({"messages": [{"role": "user",
+                                               "content": "订单 SO-1001 到哪了?"}]}).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                body = json.loads(r.read().decode())
+            text = body["choices"][0]["message"]["content"]
+            last = hits["last"] or {}
+            check("anthropic 适配器: 工具环双向翻译 + 认证头/顶层 system/input_schema",
+                  "已发货" in text and last.get("auth") == "sk-fake"
+                  and last.get("version") == "2023-06-01" and last.get("system_ok")
+                  and last.get("tools_ok") and last.get("tool_result_ok"),
+                  f"text={text[:50]}, hits={json.dumps(last, ensure_ascii=False)}")
+
+            req2 = urllib.request.Request(
+                "http://127.0.0.1:8982/v1/upstream/chat/completions",
+                data=json.dumps({"messages": [{"role": "user", "content": "hi"}]}).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req2, timeout=20) as r:
+                gw = json.loads(r.read().decode())
+            msg = gw.get("choices", [{}])[0].get("message", {})
+            check("上游网关: OpenAI 形状归一返回 + model/usage 透传",
+                  gw.get("model") == "claude-test-1" and isinstance(msg.get("content"), str)
+                  and gw.get("usage", {}).get("prompt_tokens") == 70,
+                  json.dumps(gw, ensure_ascii=False)[:150])
+
+            proc_b = subprocess.Popen(
+                ["node", "agent/server.js"], cwd=ROOT,
+                env=dict(os.environ, PORT="8983", UPSTREAM_PROTOCOL="anthropic",
+                         UPSTREAM_BASE="http://127.0.0.1:8981", UPSTREAM_API_KEY="sk-fake"),
+                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+            try:
+                for _ in range(50):
+                    try:
+                        urllib.request.urlopen("http://127.0.0.1:8983/healthz", timeout=1)
+                        break
+                    except Exception:
+                        time.sleep(0.2)
+                try:
+                    urllib.request.urlopen(urllib.request.Request(
+                        "http://127.0.0.1:8983/v1/upstream/chat/completions",
+                        data=b"{}", headers={"Content-Type": "application/json"}), timeout=10)
+                    gw_off = False
+                except urllib.error.HTTPError as e:
+                    gw_off = e.code == 404
+                check("上游网关默认关闭 (未设 UPSTREAM_GATEWAY 时 404)", gw_off)
+            finally:
+                stop_agent(proc_b)
+    finally:
+        stop_agent(proc_a)
+        mock.shutdown()
 
     return finish()
 

@@ -5,7 +5,7 @@
 description: "Probe: openai:chat target + apiBaseUrl 接线验证 (mock agent)"
 
 targets:
-  - id: openai:chat:deepseek-chat
+  - id: openai:chat:agent-under-test
     label: probe-openai-chat
     config:
       apiBaseUrl: http://localhost:8787/v1

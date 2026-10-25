@@ -141,12 +141,13 @@ for (const file of FILES) {
     }
   }
 
-  // DeepSeek 接入一致性: 涉及 deepseek 的 provider 必须用 env var 传 key
+  // 模型凭证纪律 (协议无关): 任何 provider 配置内联 apiKey 都拒绝 — 凭证必须经
+  // apiKeyEnvar 注入; 上游协议/厂商/模型由 UPSTREAM_* 环境变量决定, 配置不携带凭证
   const text = JSON.stringify(cfg);
-  if (text.includes('deepseek') && text.includes('apiKey:')) {
-    fail('DeepSeek 配置使用了内联 apiKey, 应使用 apiKeyEnvar: DEEPSEEK_API_KEY');
-  } else if (text.includes('deepseek')) {
-    ok('DeepSeek 凭证通过 apiKeyEnvar 注入');
+  if (/["']apiKey["']\s*:/.test(text)) {
+    fail('provider 配置使用了内联 apiKey, 凭证必须经 apiKeyEnvar 注入 (协议无关)');
+  } else {
+    ok('凭证经 apiKeyEnvar 注入, 无内联密钥');
   }
 }
 

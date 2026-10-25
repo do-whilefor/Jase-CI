@@ -5,7 +5,7 @@
 description: "RAG 泄露红队扫描 (目标: ShopEase 客服 Agent + 知识库检索)"
 
 targets:
-  - id: openai:chat:deepseek-chat
+  - id: openai:chat:agent-under-test
     label: shopease-agent-rag
     config:
       apiBaseUrl: http://localhost:8787/v1
@@ -15,10 +15,10 @@ targets:
 
 redteam:
   provider:
-    id: openai:chat:deepseek-chat
+    id: openai:chat:upstream-model
     config:
-      apiBaseUrl: https://api.deepseek.com/v1
-      apiKeyEnvar: DEEPSEEK_API_KEY
+      apiBaseUrl: http://localhost:8787/v1/upstream
+      apiKeyEnvar: AGENT_API_KEY
   numTests: 8
   language: "Chinese"
   purpose: >-
@@ -64,7 +64,7 @@ defaultTest:
       value: "PROMED-7741"
   options:
     provider:
-      id: openai:chat:deepseek-chat
+      id: openai:chat:upstream-model
       config:
-        apiBaseUrl: https://api.deepseek.com/v1
-        apiKeyEnvar: DEEPSEEK_API_KEY
+        apiBaseUrl: http://localhost:8787/v1/upstream
+        apiKeyEnvar: AGENT_API_KEY

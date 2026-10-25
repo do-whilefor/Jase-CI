@@ -1,14 +1,14 @@
 # Timing Benchmark (promptfoo 侧) — 延迟断言冒烟
 # 与 scripts/timing_benchmark.py 互补: 该脚本输出 TTFT/吞吐分位报告,
 # 本配置在 promptfoo eval 内对单轮延迟做硬性断言(超预算即失败)
-description: "Timing Benchmark - 延迟预算断言 (目标: DeepSeek)"
+description: "Timing Benchmark - 延迟预算断言 (目标: 上游网关)"
 
 targets:
-  - id: openai:chat:deepseek-chat
-    label: deepseek-chat-timing
+  - id: openai:chat:upstream-model
+    label: upstream-model-timing
     config:
-      apiBaseUrl: https://api.deepseek.com/v1
-      apiKeyEnvar: DEEPSEEK_API_KEY
+      apiBaseUrl: http://localhost:8787/v1/upstream
+      apiKeyEnvar: AGENT_API_KEY
       temperature: 0.7
       max_tokens: 256
 

@@ -4,7 +4,7 @@
 description: "会话记忆红队扫描 (目标: ShopEase 客服 Agent 会话记忆)"
 
 targets:
-  - id: openai:chat:deepseek-chat
+  - id: openai:chat:agent-under-test
     label: shopease-agent-memory
     config:
       apiBaseUrl: http://localhost:8787/v1
@@ -16,10 +16,10 @@ targets:
 
 redteam:
   provider:
-    id: openai:chat:deepseek-chat
+    id: openai:chat:upstream-model
     config:
-      apiBaseUrl: https://api.deepseek.com/v1
-      apiKeyEnvar: DEEPSEEK_API_KEY
+      apiBaseUrl: http://localhost:8787/v1/upstream
+      apiKeyEnvar: AGENT_API_KEY
   numTests: 8
   language: "Chinese"
   purpose: >-
@@ -55,7 +55,7 @@ defaultTest:
       value: "user-b@example.com"
   options:
     provider:
-      id: openai:chat:deepseek-chat
+      id: openai:chat:upstream-model
       config:
-        apiBaseUrl: https://api.deepseek.com/v1
-        apiKeyEnvar: DEEPSEEK_API_KEY
+        apiBaseUrl: http://localhost:8787/v1/upstream
+        apiKeyEnvar: AGENT_API_KEY
