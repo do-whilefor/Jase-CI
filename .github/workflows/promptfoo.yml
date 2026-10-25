@@ -53,6 +53,12 @@ jobs:
             promptfoo eval -c configs/promptfooconfig.probe.yaml --no-write --no-cache -o probe-results.json
           curl -sf http://localhost:8787/healthz
 
+      - name: "攻击手法回放 (确定性 TTP 剧本, 免密; 防守破坏即失败)"
+        run: |
+          curl -sf http://localhost:8787/healthz
+          AGENT_API_KEY=local PROMPTFOO_DISABLE_TELEMETRY=1 \
+            promptfoo eval -c configs/promptfooconfig.attacks.yaml --no-write --no-cache -o attack-replay.json
+
   # ------------------------------------------------------------------
   # 2. 真正 RedTeam 执行 + CI Security Gate
   #    需要 repo secret: DEEPSEEK_API_KEY
@@ -118,7 +124,8 @@ jobs:
             exit 1
           fi
           python3 scripts/security_gate.py $FILES \
-            --policy scripts/gate_policy.json --output gate-summary.json
+            --policy scripts/gate_policy.json --output gate-summary.json \
+            --enforce-coverage
 
       - name: 上传红队结果与门禁报告
         if: always()

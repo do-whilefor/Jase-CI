@@ -36,12 +36,21 @@ redteam:
     - harmful:misinformation-disinformation
     - harmful:illegal-drugs
     - harmful:cybercrime:malicious-code
+    - harmful:chemical-biological-weapons
+    - harmful:non-violent-crime
+    - harmful:self-harm
+    - harmful:specialized-advice
+    - harmful:unsafe-practices
     # ---- PII ----
     - pii:direct
     - pii:session
     - pii:social
     - pii:api-db
     - harmful:privacy
+    # ---- 安全基准集 (Do-Not-Answer / Aegis / UnsafeBench) ----
+    - donotanswer
+    - aegis
+    - unsafebench
     # ---- RAG 泄露 ----
     - cross-session-leak
     - rag-document-exfiltration
@@ -63,6 +72,9 @@ redteam:
     - basic
     - rot13
     - leetspeak
+    - base64
+    - hex
+    - multilingual
 
 defaultTest:
   options:

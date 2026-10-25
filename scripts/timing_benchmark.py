@@ -10,17 +10,21 @@
   TARGET_BASE_URL     OpenAI 兼容 base url (默认 https://api.deepseek.com/v1)
   TARGET_API_KEY      API Key (默认回落 DEEPSEEK_API_KEY; 打本地 agent 可留空)
   TARGET_MODEL        模型名 (默认 deepseek-chat)
-  ROUNDS              每个用例轮数 (默认 5)
+  ROUNDS              每个用例轮数 (默认 10)
   STREAM              1/0, 是否测 TTFT (默认 1)
   TIMING_BUDGET_MS    p95 总延迟预算, 超出退出码 1 (默认 20000)
+  COOLDOWN_MS         轮间间隔毫秒 (默认 300, 降低限流/排队对样本的扰动)
 
-输出: timing-report.json + timing-report.md (写在 --outdir, 默认当前目录)。
+单轮失败自动重试一次, 仍失败才计入 errors; 成功的重试计入 retries。
+输出: timing-report.json + timing-report.md (写在 --outdir, 默认当前目录);
+设置 GITHUB_STEP_SUMMARY 时同步写入 Job Summary。
 仅依赖标准库 (Python >= 3.9)。
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import statistics
 import sys
@@ -90,11 +94,16 @@ def chat_request(base_url: str, api_key: str, model: str, prompt: str, stream: b
 
 
 def pct(values: list[float], q: float) -> float:
+    """线性插值分位数 (与 numpy.percentile 默认行为一致)。"""
     if not values:
         return 0.0
     ordered = sorted(values)
-    idx = min(len(ordered) - 1, max(0, round(q * (len(ordered) - 1))))
-    return ordered[idx]
+    if len(ordered) == 1:
+        return ordered[0]
+    pos = q * (len(ordered) - 1)
+    lo = math.floor(pos)
+    hi = math.ceil(pos)
+    return ordered[lo] + (ordered[hi] - ordered[lo]) * (pos - lo)
 
 
 def main() -> int:
@@ -106,9 +115,10 @@ def main() -> int:
     base_url = os.environ.get("TARGET_BASE_URL", "https://api.deepseek.com/v1")
     api_key = os.environ.get("TARGET_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
     model = os.environ.get("TARGET_MODEL", "deepseek-chat")
-    rounds = max(1, int(os.environ.get("ROUNDS", "5")))
+    rounds = max(1, int(os.environ.get("ROUNDS", "10")))
     stream = os.environ.get("STREAM", "1") == "1"
     budget_p95 = float(os.environ.get("TIMING_BUDGET_MS", "20000"))
+    cooldown_ms = max(0, int(os.environ.get("COOLDOWN_MS", "300")))
 
     workloads = WORKLOADS
     if args.workloads:
@@ -131,19 +141,34 @@ def main() -> int:
         name = wl["name"]
         prompt = wl["prompt"]
         ttfts, totals, tps_list, errors = [], [], [], []
+        retries_used = 0
         for i in range(rounds):
-            try:
-                ttft, total, ctokens, _text = chat_request(base_url, api_key, model, prompt, stream)
-                ttfts.append(ttft if ttft is not None else total)
-                totals.append(total)
-                if ctokens and total > 0:
-                    tps_list.append(ctokens / (total / 1000))
-            except Exception as e:  # noqa: BLE001 — 记录后继续, 单轮失败不影响其余轮次
-                errors.append(str(e)[:200])
+            if i > 0 and cooldown_ms:
+                time.sleep(cooldown_ms / 1000)
+            got = None
+            for attempt in range(2):
+                try:
+                    got = chat_request(base_url, api_key, model, prompt, stream)
+                    if attempt > 0:
+                        retries_used += 1
+                    break
+                except Exception as e:  # noqa: BLE001 — 首败重试一次, 再败计入 errors
+                    if attempt == 0:
+                        time.sleep(1.0)
+                    else:
+                        errors.append(str(e)[:200])
+            if got is None:
+                continue
+            ttft, total, ctokens, _text = got
+            ttfts.append(ttft if ttft is not None else total)
+            totals.append(total)
+            if ctokens and total > 0:
+                tps_list.append(ctokens / (total / 1000))
         entry = {
             "name": name,
             "rounds": rounds,
             "errors": errors,
+            "retries": retries_used,
             "ttft_ms": {"avg": round(statistics.fmean(ttfts), 1) if ttfts else None,
                         "p95": round(pct(ttfts, 0.95), 1) if ttfts else None},
             "total_ms": {"avg": round(statistics.fmean(totals), 1) if totals else None,
@@ -182,6 +207,11 @@ def main() -> int:
         lines.append(f"| {w['name']} | {t['avg']} | {t['p50']} | {t['p95']} | {w['ttft_ms']['p95']} | {w['tokens_per_sec']['avg']} |")
     with open(os.path.join(args.outdir, "timing-report.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+
+    gh_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if gh_summary:
+        with open(gh_summary, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
 
     return 0 if report["passed"] else 1
 

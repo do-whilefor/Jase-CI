@@ -14,3 +14,6 @@ timing-agent/
 # ZCode 工作区指令文件, 不入库
 AGENTS.md
 probe-results.json
+attack-replay.json
+tests/attack-replay.json
+tests/probe-results.json
