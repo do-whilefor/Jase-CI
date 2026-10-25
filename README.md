@@ -12,6 +12,8 @@
 
 [概览](#概览) · [使用](#使用) · [CI 流水线](#ci-流水线) · [安全门禁](#安全门禁) · [使用限制与安全](#使用限制与安全) · [许可与相关文件](#许可与相关文件)
 
+简体中文 · [English](./README.en.md) · [日本語](./README.ja.md)
+
 </div>
 
 ## 概览
@@ -60,31 +62,35 @@ tests/
 | 本地校验依赖 | npm 包 `yaml`（供 `validate_configs.js` 解析 YAML） |
 | 密钥 | `DEEPSEEK_API_KEY` — 真实红队扫描与时延基准必需；离线自测无需 |
 
-### 离线自测
+> 下文命令为 bash 写法。PowerShell 请用 `$env:NAME = "value"` 设置环境变量（如 `$env:CI = "true"`），并注意 `export` 等号两边不能有空格的 bash 规则在 PowerShell 中不适用。
 
-不需要任何 API key：
+### 离线自测（无需任何密钥）
 
 ```bash
-# 测试套件: mock 模式全链路 + 门禁夹具 + 时延冒烟
-python tests/run_tests.py
-
-# 配置结构与语法校验
+python tests/run_tests.py                     # 测试套件: mock 模式全链路 + 门禁夹具 + 时延冒烟
 npm install --no-save --no-package-lock yaml
-node scripts/validate_configs.js
-
-# 启动被测 Agent (离线 mock 模式)
-MOCK_MODEL=1 PORT=8787 node agent/server.js
+node scripts/validate_configs.js              # 配置结构与语法校验
+MOCK_MODEL=1 PORT=8787 node agent/server.js   # 启动被测 Agent (离线 mock 模式)
 ```
 
 ### 真实红队扫描
 
+需要两个终端：先启动被测 Agent，再从另一终端发起扫描。注意 `promptfoo eval` 在 0.123.0 中**不会**生成红队用例（仅适用于自带测试用例的离线回放套件），真实扫描必须用 `promptfoo redteam run`。
+
 ```bash
+# 终端 1 — 启动被测 Agent (真实模式, 保持运行)
 export DEEPSEEK_API_KEY=sk-xxx
-promptfoo eval -c configs/promptfooconfig.agent.yaml -o results-agent.json
+node agent/server.js
+
+# 终端 2 — 生成攻击用例并执行, 随后门禁判定
+export DEEPSEEK_API_KEY=sk-xxx
+export AGENT_API_KEY=local-test   # 任意非空值, 仅用于通过 promptfoo 的启动检查
+export CI=true                    # 跳过 promptfoo 红队邮箱验证, 与仓库 CI 行为一致
+promptfoo redteam run -c configs/promptfooconfig.agent.yaml -o results-agent.json
 python scripts/security_gate.py results-agent.json
 ```
 
-三个定向套件分别覆盖 Agent/工具滥用、RAG 泄露与会话记忆（`configs/promptfooconfig.{agent,rag,memory}.yaml`）；`promptfooconfig_full.yaml` 为 30 插件全量扫描。门禁可一次读入多个结果文件，任一违反策略即以非零码退出。
+三个定向套件分别覆盖 Agent/工具滥用、RAG 泄露与会话记忆（`configs/promptfooconfig.{agent,rag,memory}.yaml`）；`promptfooconfig_full.yaml` 为 30 插件全量扫描。门禁可一次读入多个结果文件，任一违反策略即以非零码退出。真实扫描消耗模型 API 额度，耗时数分钟属正常。
 
 ### 时延基准
 
