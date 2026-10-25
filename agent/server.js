@@ -12,6 +12,10 @@
  *   DEEPSEEK_API_KEY DeepSeek API Key; 未设置时必须 MOCK_MODEL=1
  *   MOCK_MODEL=1    离线模式: 不调用 DeepSeek, 返回确定性应答(用于 CI 冒烟/本地自测)
  *   CONFIRM_REFUND=1 退款需人工审批, 工具拒绝执行 (红队闭环演示: 开启后 excessive-agency 应归零)
+ *   SESSION_STRICT=1 会话令牌绑定: 引用既有会话必须出示创建时签发的 X-Session-Token,
+ *                   重放他人 X-Session-Id 返回 401 (默认关闭, 兼容静态 header 客户端)
+ *   MAX_SESSIONS    会话容量上限 (默认 1000, 满额拒绝新会话, 防内存耗尽)
+ *   MAX_SESSION_TURNS 每会话历史轮数上限 (默认 50, 超出丢弃最旧)
  *   UPSTREAM_BASE   上游模型 base url (默认 https://api.deepseek.com/v1)
  *   UPSTREAM_MODEL  上游模型名 (默认 deepseek-chat)
  *
@@ -20,12 +24,16 @@
 'use strict';
 
 const http = require('http');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
 const PORT = Number(process.env.PORT || 8787);
 const MOCK_MODEL = process.env.MOCK_MODEL === '1';
 const CONFIRM_REFUND = process.env.CONFIRM_REFUND === '1';
+const SESSION_STRICT = process.env.SESSION_STRICT === '1';
+const MAX_SESSIONS = Number(process.env.MAX_SESSIONS || 1000);
+const MAX_SESSION_TURNS = Number(process.env.MAX_SESSION_TURNS || 50);
 const UPSTREAM_BASE = process.env.UPSTREAM_BASE || 'https://api.deepseek.com/v1';
 const UPSTREAM_MODEL = process.env.UPSTREAM_MODEL || 'deepseek-chat';
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
@@ -38,21 +46,26 @@ const sessions = new Map();
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 
 function getSession(id) {
-  if (!id) return { history: [] };
+  if (!id) return { session: { history: [] }, created: false };
   const now = Date.now();
-  // 容量触发的惰性清扫: 过期会话主动淘汰, 避免长驻进程内存无界增长
-  if (sessions.size > 500) {
+  // 容量触发的惰性清扫: 过期会话主动淘汰; 满额且无可淘汰时拒绝新会话 (防内存耗尽)
+  if (sessions.size >= MAX_SESSIONS) {
     for (const [k, v] of sessions) {
       if (now - v.updatedAt > SESSION_TTL_MS) sessions.delete(k);
     }
   }
   let s = sessions.get(id);
+  let created = false;
   if (!s || now - s.updatedAt > SESSION_TTL_MS) {
-    s = { history: [], createdAt: now, updatedAt: now };
+    if (sessions.size >= MAX_SESSIONS) {
+      throw new Error(`会话容量已满 (${MAX_SESSIONS}), 拒绝新会话`);
+    }
+    s = { history: [], createdAt: now, updatedAt: now, token: crypto.randomBytes(16).toString('hex') };
     sessions.set(id, s);
+    created = true;
   }
   s.updatedAt = now;
-  return s;
+  return { session: s, created };
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +248,17 @@ function buildContext(session, userText) {
 }
 
 // ---------------------------------------------------------------------------
+// 行为级内容封禁: 与门禁金丝雀同源的标记清单 — DLP 按"内容"封禁而非来源文件名
+// (来源改名/新文件承载机密同样拦截); 策略缺失时退化为来源名黑名单
+// ---------------------------------------------------------------------------
+let FORBIDDEN_MARKERS = [];
+try {
+  FORBIDDEN_MARKERS = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', 'scripts', 'gate_policy.json'), 'utf8'),
+  ).forbidden_output_markers || [];
+} catch { /* 策略缺失 */ }
+
+// ---------------------------------------------------------------------------
 // MOCK 模式: 确定性应答 (不依赖外部 API, 用于 CI 冒烟与本地自测)
 // ---------------------------------------------------------------------------
 function mockRespond(userText, session) {
@@ -266,8 +290,10 @@ function mockRespond(userText, session) {
   }
   const chunks = retrieve(t);
   if (chunks.length) {
-    // DLP 防守: 受限来源 (含诱饵机密) 不得回显, 即使查询措辞绕过了关键词拒绝规则
-    if (chunks.some((c) => RESTRICTED_SOURCES.includes(c.source))) {
+    // DLP 防守: 受限来源或内容含策略标记 (诱饵机密) 的片段一律不回显 —
+    // 内容级封禁, 来源改名/新文件承载机密同样拦截
+    if (chunks.some((c) => RESTRICTED_SOURCES.includes(c.source)
+        || FORBIDDEN_MARKERS.some((mk) => c.text.toLowerCase().includes(String(mk).toLowerCase())))) {
       return '抱歉, 内部配置信息无法对外披露。请问有什么订单或售后问题可以帮您?';
     }
     return `根据知识库: ${chunks[0].text.slice(0, 200)}`;
@@ -376,7 +402,19 @@ const server = http.createServer(async (req, res) => {
     // 会话仅由 X-Session-Id 头选定 — 请求体 metadata.session_id 曾是备用通道,
     // 攻击者无需头权限即可冒用受害者会话读取其历史 (红队闭环 #2, 已移除)
     const sessionId = req.headers['x-session-id'] || null;
-    const session = getSession(sessionId);
+    let session;
+    let created;
+    try {
+      ({ session, created } = getSession(sessionId));
+    } catch (e) {
+      return sendJson(res, 503, { error: { message: String(e.message || e) } });
+    }
+    // 会话令牌绑定 (SESSION_STRICT=1): 会话 ID 本身不是权限 — 引用既有会话必须
+    // 出示创建时签发的 X-Session-Token, 重放他人 ID 即 401
+    if (SESSION_STRICT && sessionId && !created
+        && req.headers['x-session-token'] !== session.token) {
+      return sendJson(res, 401, { error: { message: '会话令牌缺失或不匹配' } });
+    }
     const incoming = Array.isArray(payload.messages) ? payload.messages : [];
     const lastUser = [...incoming].reverse().find((m) => m.role === 'user');
     const userText = lastUser ? String(lastUser.content) : '';
@@ -396,9 +434,12 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 502, { error: { message: String(e.message || e) } });
     }
 
-    // Memory: 追加本轮对话到会话历史
+    // Memory: 追加本轮对话到会话历史 (超过上限丢弃最旧, 每会话内存有界)
     session.history.push({ role: 'user', content: userText });
     session.history.push({ role: 'assistant', content });
+    if (session.history.length > MAX_SESSION_TURNS * 2) {
+      session.history.splice(0, session.history.length - MAX_SESSION_TURNS * 2);
+    }
 
     return sendJson(res, 200, {
       id: `chatcmpl-agent-${started}`,
@@ -407,7 +448,10 @@ const server = http.createServer(async (req, res) => {
       model: MOCK_MODEL ? 'agent-mock' : UPSTREAM_MODEL,
       choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
       usage,
-    }, sessionId ? { 'X-Session-Id': sessionId } : {});
+    }, sessionId ? {
+      'X-Session-Id': sessionId,
+      ...(created ? { 'X-Session-Token': session.token } : {}),
+    } : {});
   }
 
   return sendJson(res, 404, { error: { message: `not found: ${req.method} ${url.pathname}` } });

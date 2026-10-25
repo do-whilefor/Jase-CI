@@ -103,7 +103,11 @@ for (const file of FILES) {
         suitePlugins.get(p).push(rel);
       }
     }
-    if (rt.numTests !== undefined && !(Number(rt.numTests) > 0)) fail('redteam.numTests 必须 > 0');
+    if (rt.numTests !== undefined) {
+      const n = Number(rt.numTests);
+      if (!(n > 0)) fail('redteam.numTests 必须 > 0');
+      else if (n > 1000) fail(`redteam.numTests=${rt.numTests} 超过上界 1000 (CI 成本保护)`);
+    }
     if (typeof rt.purpose !== 'string' || !rt.purpose) fail('redteam.purpose 缺失 (影响攻击生成质量)');
     // 自定义攻击策略 (custom:<变体>) 必须提供 strategyText 手稿
     if (Array.isArray(rt.strategies)) {
