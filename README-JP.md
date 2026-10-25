@@ -2,7 +2,7 @@
 
 # Jase-CI
 
-[promptfoo](https://github.com/promptfoo/promptfoo) ベース、LLM アプリ向けの継続的レッドチーム + レイテンシ計測 CI。攻撃生成・結果判定・被検査アプリのバックエンドはすべて DeepSeek に統一し、API キー 1 つで全フローが動きます。
+[promptfoo](https://github.com/promptfoo/promptfoo) ベース、LLM アプリ向けの継続的レッドチーム + レイテンシ計測 CI。攻撃生成・結果判定・被検査アプリのバックエンドは同一の上流モデルに統一（デフォルトは DeepSeek、`UPSTREAM_*` で切替可能）。API キー 1 つで全フローが動きます。
 
 [![CI](https://github.com/do-whilefor/Jase-CI/actions/workflows/promptfoo.yml/badge.svg)](https://github.com/do-whilefor/Jase-CI/actions/workflows/promptfoo.yml)
 [![promptfoo](https://img.shields.io/badge/promptfoo-0.123.0-orange)](https://github.com/promptfoo/promptfoo)
@@ -12,7 +12,7 @@
 
 [概要](#概要) · [使い方](#使い方) · [セキュリティ範囲](#セキュリティ範囲) · [ライセンス](#ライセンス)
 
-**日本語** · [简体中文](./README.md) · [English](./README.EN.md)
+**日本語** · [简体中文](./README-ZH.md) · [English](./README.md)
 
 </div>
 
@@ -20,24 +20,27 @@
 
 Jase-CI は LLM アプリへのレッドチーム評価を CI として継続実行できるようにします。被検査体は OpenAI 互換のカスタマーサポート Agent（実際のツール呼び出し / RAG 検索 / 会話メモリ持ち）。promptfoo のレッドチームプラグインが攻撃ケースを生成し、`security_gate.py` がポリシーに基づいて決定論的に判定、基準超過ならパイプラインを失敗させます。レイテンシも二視点で計測し、性能予算もゲート化します。
 
-- **キー 1 つで全フロー** — 攻撃生成・判定・Agent バックエンドが `DEEPSEEK_API_KEY` を共用。
+- **キー 1 つで全フロー** — 攻撃生成・判定・Agent バックエンドが `UPSTREAM_API_KEY`（`DEEPSEEK_API_KEY` フォールバック対応）を共用。
 - **決定論的セキュリティゲート（スキップ不可）** — 全体攻撃成功率の上限、ゼロ容認プラグイン（1 件命中で失敗）、プラグイン別上限に加え、LLM に依存しないデコイ機密断言。
 - **二視点レイテンシ計測** — 素のモデル直結と Agent 全経路（ツール / RAG / メモリ込み）をそれぞれ p95 予算でゲート。
 - **オフライン検証可能** — モック全経路テスト・ゲートフィクスチャ自己テスト・キー不要の接続プローブにより、鍵未設定のリポジトリでも validate はグリーン。
 
-CI の定義は [`.github/workflows/promptfoo.yml`](./.github/workflows/promptfoo.yml)。main への push で 3 スイートを実行し、毎日 UTC 02:00 の定期ジョブと手動トリガーでは 30 プラグインのフルスキャンも実行します。レッドチームと計測ジョブには `DEEPSEEK_API_KEY` シークレットが必要で、未設定なら鍵不要の validate のみ実行されます。
+CI の定義は [`.github/workflows/promptfoo.yml`](./.github/workflows/promptfoo.yml)。main への push で 4 スイート（自作クリエイティブ攻撃スイート込み）を実行し、毎日 UTC 02:00 の定期ジョブと手動トリガーでは 46 プラグインのフルスキャンも実行します。レッドチームと計測ジョブには `UPSTREAM_API_KEY` シークレット（`DEEPSEEK_API_KEY` も可）が必要で、未設定なら鍵不要の validate のみ実行されます。
 
 ### アーキテクチャ
 
 ```
 .github/workflows/promptfoo.yml        CI オーケストレーション: 検証 → レッドチーム+ゲート → 計測
-promptfooconfig_full.yaml              フルレッドチームスキャン (30 プラグイン, DeepSeek 直結)
+promptfooconfig_full.yaml              フルレッドチームスキャン (46 プラグイン, 上流ゲートウェイ経由)
+promptfooconfig_creative.yaml          定向: クリエイティブ攻撃 (自作 8 プラグイン, redteam run で実生成)
 configs/
+  promptfooconfig.attacks.yaml         オフライン攻撃リプレイ (CI validate で強制)
   promptfooconfig.agent.yaml           定向: Agent/ツール乱用 (過剰代理/ツール発見/ハイジャック/目標乖離)
   promptfooconfig.rag.yaml             定向: RAG 漏えい (ナレッジ流出/セッション跨ぎ/プロンプト抽出)
   promptfooconfig.memory.yaml          定向: 会話メモリ (メモリ投毒/PII/セッション跨ぎプローブ)
   promptfooconfig.probe.yaml           キー不要プローブ: provider 接続検証 (CI validate で強制)
   promptfooconfig.timing.yaml          promptfoo 側レイテンシ断言 (latency 閾値)
+  redteam/*.json                       自作クリエイティブプラグイン定義 (generator+grader)
 agent/
   server.js                            被検査アプリ: OpenAI 互換サポート Agent
                                        (実ツール/RAG/会話メモリ; MOCK_MODEL=1 でオフライン)
@@ -62,7 +65,7 @@ tests/
 | Node.js | 24 — 被検査 Agent・設定検証・接続プローブ |
 | Python | 3.12 — テストスイート・セキュリティゲート・計測（標準ライブラリのみ） |
 | ローカル検証 | npm パッケージ `yaml`（`validate_configs.js` が使用） |
-| キー | `DEEPSEEK_API_KEY` — 実スキャンと計測に必須。オフライン自測には不要 |
+| キー | `UPSTREAM_API_KEY`（`DEEPSEEK_API_KEY` フォールバック対応）— 実スキャンと計測に必須。オフライン自測には不要 |
 
 > コマンドは bash 記法。PowerShell では `$env:NAME = "value"` で環境変数を設定してください（例: `$env:CI = "true"`）。
 
@@ -81,18 +84,18 @@ MOCK_MODEL=1 PORT=8787 node agent/server.js   # 被検査 Agent 起動 (オフ�
 
 ```bash
 # ターミナル 1 — 被検査 Agent (実モード、起動したまま)
-export DEEPSEEK_API_KEY=sk-xxx
+export UPSTREAM_API_KEY=sk-xxx
 node agent/server.js
 
 # ターミナル 2 — 攻撃生成・実行、その後ゲート判定
-export DEEPSEEK_API_KEY=sk-xxx
+export UPSTREAM_API_KEY=sk-xxx
 export AGENT_API_KEY=local-test   # 空でなければ任意の値。promptfoo の起動チェック用
 export CI=true                    # promptfoo のメール検証をスキップ (リポジトリ CI と同一挙動)
 promptfoo redteam run -c configs/promptfooconfig.agent.yaml -o results-agent.json
 python scripts/security_gate.py results-agent.json
 ```
 
-3 つのスイート（`configs/promptfooconfig.{agent,rag,memory}.yaml`）がツール乱用・RAG 漏えい・会話メモリをカバー。`promptfooconfig_full.yaml` は 30 プラグインのフルスキャンです。ゲートは複数の結果ファイルを一括読み込みでき、ポリシー違反が 1 つでもあれば非ゼロで終了します。実スキャンは API クォータを消費し、数分かかるのが普通です。
+4 つのスイート（`configs/promptfooconfig.{agent,rag,memory}.yaml` + `promptfooconfig_creative.yaml`）がツール乱用・RAG 漏えい・会話メモリ・自作クリエイティブ攻撃をカバー。`promptfooconfig_full.yaml` は 46 プラグインのフルスキャンです。ゲートは複数の結果ファイルを一括読み込みでき、ポリシー違反が 1 つでもあれば非ゼロで終了します。実スキャンは API クォータを消費し、数分かかるのが普通です。
 
 ### レイテンシ計測
 

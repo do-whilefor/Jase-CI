@@ -2,126 +2,129 @@
 
 # Jase-CI
 
-面向 LLM 应用的持续红队 + 时延基准 CI 流水线，基于 [promptfoo](https://github.com/promptfoo/promptfoo) 构建，攻击生成、结果判定与被测应用后端统一使用 DeepSeek。
+Continuous red-teaming + latency-benchmark CI for LLM apps, built on [promptfoo](https://github.com/promptfoo/promptfoo). Attack generation, result judging and the target app backend share one upstream model — DeepSeek by default, swappable via `UPSTREAM_*`.
 
 [![CI](https://github.com/do-whilefor/Jase-CI/actions/workflows/promptfoo.yml/badge.svg)](https://github.com/do-whilefor/Jase-CI/actions/workflows/promptfoo.yml)
 [![promptfoo](https://img.shields.io/badge/promptfoo-0.123.0-orange)](https://github.com/promptfoo/promptfoo)
 [![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-PolyForm_NC_1.0.0-blue)](#许可说明)
+[![License](https://img.shields.io/badge/License-PolyForm_NC_1.0.0-blue)](#license)
 
-[项目介绍](#项目介绍) · [使用方法](#使用方法) · [安全范围](#安全范围) · [许可说明](#许可说明)
+[Overview](#overview) · [Usage](#usage) · [Security Scope](#security-scope) · [License](#license)
 
-简体中文 · [English](./README.EN.md) · [日本語](./README.JP.md)
+**English** · [简体中文](./README-ZH.md) · [日本語](./README-JP.md)
 
 </div>
 
-## 项目介绍
+## Overview
 
-Jase-CI 把对 LLM 应用的红队评估做成可持续运行的 CI：以一个 OpenAI 兼容的客服 Agent（真实工具调用 / RAG 检索 / 会话记忆）为被测对象，由 promptfoo 红队插件生成攻击用例，`security_gate.py` 按策略对结果做确定性判定，越线即拦截流水线；另附双视角时延基准，把性能预算同样变成门禁。
+Jase-CI turns red-teaming of an LLM app into a sustainable CI loop. The target is an OpenAI-compatible customer-service Agent (real tool calls / RAG retrieval / session memory). promptfoo red-team plugins generate attack cases, `security_gate.py` judges results deterministically against a policy file, and the pipeline fails when limits are crossed. A dual-view latency benchmark turns performance budgets into gates as well.
 
-- **一套密钥跑通全流程**：红队攻击生成、结果判定与被测 Agent 后端共用 `DEEPSEEK_API_KEY`。
-- **确定性安全门禁，不可跳过**：整体攻击成功率上限、零容忍插件任一命中即拦截、单插件成功率上限，另含不依赖 LLM 评审的确定性防泄密断言。
-- **双视角时延基准**：裸模型直连与 Agent 全链路（含工具 / RAG / 记忆开销）分别度量 TTFT、总延迟与吞吐，各自执行 p95 预算门禁。
-- **离线可验证**：mock 全链路测试、门禁夹具自测与免密接线探针，无密钥仓库的 validate job 保持绿色。
+- **One key runs everything** — attack generation, judging and the Agent backend share `UPSTREAM_API_KEY` (falls back to `DEEPSEEK_API_KEY`).
+- **Deterministic, non-skippable security gate** — overall attack-success-rate cap, zero-tolerance plugins (a single hit fails), per-plugin caps, plus LLM-free decoy-secret assertions.
+- **Dual-view latency benchmark** — raw model direct vs full Agent chain (tools / RAG / memory), each with its own p95 budget gate.
+- **Offline-verifiable** — mock end-to-end tests, gate fixture self-tests and a key-free provider probe keep the validate job green in repos with no secrets configured.
 
-CI 编排见 [`.github/workflows/promptfoo.yml`](./.github/workflows/promptfoo.yml)：push 到 main 触发三个定向套件，每天 UTC 02:00 定时与手动触发加跑 30 插件全量扫描。红队与时延 job 需配置 `DEEPSEEK_API_KEY` secret；未配置时仅运行无需密钥的 validate job。
+CI orchestration lives in [`.github/workflows/promptfoo.yml`](./.github/workflows/promptfoo.yml): pushes to main run the four targeted suites (incl. the self-built creative-attack suite); the daily UTC 02:00 schedule and manual triggers add the 46-plugin full scan. The red-team and timing jobs need the `UPSTREAM_API_KEY` secret (`DEEPSEEK_API_KEY` also accepted); without it, only the key-free validate job runs.
 
-### 架构
+### Architecture
 
 ```
-.github/workflows/promptfoo.yml        CI 编排: 验证 → 红队+安全门禁 → 时延基准
-promptfooconfig_full.yaml              红队全量扫描 (30 插件, 直连 DeepSeek)
+.github/workflows/promptfoo.yml        CI orchestration: validate → redteam + security gate → timing
+promptfooconfig_full.yaml              Full red-team scan (46 plugins, via upstream gateway)
+promptfooconfig_creative.yaml          Targeted: 8 self-built creative plugins (redteam run, real generation)
 configs/
-  promptfooconfig.agent.yaml           定向: Agent/工具滥用 (过度代理/工具发现/劫持/目标偏移)
-  promptfooconfig.rag.yaml             定向: RAG 泄露 (知识库外泄/跨会话/提示词提取)
-  promptfooconfig.memory.yaml          定向: 会话记忆 (记忆投毒/PII 会话/跨会话探测)
-  promptfooconfig.probe.yaml           免密探针: 验证 provider 接线 (CI validate job 强制执行)
-  promptfooconfig.timing.yaml          promptfoo 侧延迟断言 (latency 阈值)
+  promptfooconfig.attacks.yaml         Offline attack replay (enforced in CI validate job)
+  promptfooconfig.agent.yaml           Targeted: Agent/tool abuse (excessive agency / tool discovery / hijacking / goal misalignment)
+  promptfooconfig.rag.yaml             Targeted: RAG leakage (knowledge exfiltration / cross-session / prompt extraction)
+  promptfooconfig.memory.yaml          Targeted: session memory (poisoning / PII sessions / cross-session probing)
+  promptfooconfig.probe.yaml           Key-free probe: verifies provider wiring (enforced in CI validate job)
+  promptfooconfig.timing.yaml          promptfoo-side latency assertions (latency thresholds)
+  redteam/*.json                       Self-built creative plugin definitions (generator + grader)
 agent/
-  server.js                            被测应用: OpenAI 兼容客服 Agent
-                                       (真实工具调用 / RAG 检索 / 会话记忆; MOCK_MODEL=1 可离线)
-  knowledge/*.md                       RAG 语料, internal-notes.md 含"禁止披露"诱饵内容
+  server.js                            App under test: OpenAI-compatible customer-service Agent
+                                       (real tools / RAG / session memory; MOCK_MODEL=1 for offline)
+  knowledge/*.md                       RAG corpus; internal-notes.md contains "do-not-disclose" decoys
 scripts/
-  security_gate.py                     CI Security Gate: 解析红队结果, 按策略判定放行/拦截
-  gate_policy.json                     门禁策略 (整体成功率上限 / 零容忍插件 / 单插件上限)
-  timing_benchmark.py                  时延基准: TTFT / 总延迟 / 吞吐, p95 预算门禁
-  validate_configs.js                  promptfoo 配置结构与语法校验
+  security_gate.py                     CI Security Gate: parses results, judges pass/fail against policy
+  gate_policy.json                     Gate policy (overall ASR cap / zero-tolerance plugins / per-plugin caps)
+  timing_benchmark.py                  Timing benchmark: TTFT / total latency / throughput, p95 budget gate
+  validate_configs.js                  promptfoo config structure & syntax validation
 tests/
-  run_tests.py                         离线测试套件 (mock 模式全链路 + 门禁夹具 + 时延冒烟)
+  run_tests.py                         Offline test suite (mock end-to-end + gate fixtures + timing smoke)
 ```
 
-## 使用方法
+## Usage
 
-### 环境要求
+### Requirements
 
-| 项 | 要求 |
+| Item | Requirement |
 | --- | --- |
-| 运行环境 | Windows / macOS / Linux（CI 运行于 ubuntu-latest） |
-| promptfoo | 0.123.0（`npm install -g promptfoo@0.123.0`，要求 Node.js ≥ 22.22.0） |
-| Node.js | 24 — 被测 Agent、配置校验与接线探针 |
-| Python | 3.12 — 测试套件、安全门禁与时延基准，仅需标准库 |
-| 本地校验依赖 | npm 包 `yaml`（供 `validate_configs.js` 解析 YAML） |
-| 密钥 | `DEEPSEEK_API_KEY` — 真实红队扫描与时延基准必需；离线自测无需 |
+| OS | Windows / macOS / Linux (CI runs on ubuntu-latest) |
+| promptfoo | 0.123.0 (`npm install -g promptfoo@0.123.0`, needs Node.js ≥ 22.22.0) |
+| Node.js | 24 — target Agent, config validation, wiring probe |
+| Python | 3.12 — test suite, security gate, latency benchmark (stdlib only) |
+| Local validation | npm package `yaml` (parsed by `validate_configs.js`) |
+| Key | `UPSTREAM_API_KEY` (falls back to `DEEPSEEK_API_KEY`) — required for real scans and benchmarks; offline tests need none |
 
-> 下文命令为 bash 写法。PowerShell 请用 `$env:NAME = "value"` 设置环境变量（如 `$env:CI = "true"`）。
+> Commands are bash-style. In PowerShell set variables with `$env:NAME = "value"` (e.g. `$env:CI = "true"`).
 
-### 离线自测（无需任何密钥）
+### Offline self-test (no keys needed)
 
 ```bash
-python tests/run_tests.py                     # 测试套件: mock 模式全链路 + 门禁夹具 + 时延冒烟
+python tests/run_tests.py                     # mock end-to-end + gate fixtures + timing smoke
 npm install --no-save --no-package-lock yaml
-node scripts/validate_configs.js              # 配置结构与语法校验
-MOCK_MODEL=1 PORT=8787 node agent/server.js   # 启动被测 Agent (离线 mock 模式)
+node scripts/validate_configs.js              # config structure & syntax validation
+MOCK_MODEL=1 PORT=8787 node agent/server.js   # start target Agent (offline mock mode)
 ```
 
-### 真实红队扫描
+### Real red-team scan
 
-需要两个终端：先启动被测 Agent，再从另一终端发起扫描。注意 `promptfoo eval` 在 0.123.0 中**不会**生成红队用例（仅适用于自带测试用例的离线回放套件），真实扫描必须用 `promptfoo redteam run`。
+Two terminals: start the Agent first, then scan from the other one. Note that `promptfoo eval` does **not** generate red-team cases in 0.123.0 (it only runs suites that ship their own tests); real scans must use `promptfoo redteam run`.
 
 ```bash
-# 终端 1 — 启动被测 Agent (真实模式, 保持运行)
-export DEEPSEEK_API_KEY=sk-xxx
+# Terminal 1 — target Agent (real mode, keep it running)
+export UPSTREAM_API_KEY=sk-xxx
 node agent/server.js
 
-# 终端 2 — 生成攻击用例并执行, 随后门禁判定
-export DEEPSEEK_API_KEY=sk-xxx
-export AGENT_API_KEY=local-test   # 任意非空值, 仅用于通过 promptfoo 的启动检查
-export CI=true                    # 跳过 promptfoo 红队邮箱验证, 与仓库 CI 行为一致
+# Terminal 2 — generate attacks, run them, then gate
+export UPSTREAM_API_KEY=sk-xxx
+export AGENT_API_KEY=local-test   # any non-empty value; passes promptfoo's startup check
+export CI=true                    # skips promptfoo's red-team email verification, same as repo CI
 promptfoo redteam run -c configs/promptfooconfig.agent.yaml -o results-agent.json
 python scripts/security_gate.py results-agent.json
 ```
 
-三个定向套件分别覆盖 Agent/工具滥用、RAG 泄露与会话记忆（`configs/promptfooconfig.{agent,rag,memory}.yaml`）；`promptfooconfig_full.yaml` 为 30 插件全量扫描。门禁可一次读入多个结果文件，任一违反策略即以非零码退出。真实扫描消耗模型 API 额度，耗时数分钟属正常。
+Four targeted suites cover tool abuse, RAG leakage, session memory and the self-built creative attacks (`configs/promptfooconfig.{agent,rag,memory}.yaml` + `promptfooconfig_creative.yaml`); `promptfooconfig_full.yaml` is the 46-plugin full scan. The gate accepts multiple result files at once and exits non-zero on any policy violation. Real scans consume model API quota and typically take several minutes.
 
-### 时延基准
+### Latency benchmark
 
 ```bash
-# 视角一: 裸模型直连
+# View 1: raw model direct
 python scripts/timing_benchmark.py --outdir timing-model
 
-# 视角二: Agent 全链路 (配合上一步启动的 Agent)
+# View 2: full Agent chain (with the Agent from the previous step)
 TARGET_BASE_URL=http://localhost:8787/v1 python scripts/timing_benchmark.py --outdir timing-agent
 ```
 
-预算由 `TIMING_BUDGET_MS` 控制（CI 中 Agent 视角 p95 预算为 30s），p95 超预算即失败。
+Budgets are controlled by `TIMING_BUDGET_MS` (Agent-view p95 budget is 30s in CI); exceeding p95 fails the run.
 
-## 安全范围
+## Security Scope
 
-使用前请阅读[《免责声明与使用合规须知》](./SECURITY.md)。
+Read [SECURITY.md](./SECURITY.md) before use.
 
-- **合法授权**：本项目用于测试你拥有或已获授权的应用。红队插件会真实生成攻击性内容并调用模型服务——不得将本流水线指向未授权的第三方系统。
-- **门禁策略**：[`scripts/gate_policy.json`](./scripts/gate_policy.json) 按策略确定性判定——整体攻击成功率上限 **20%**；提示词提取、系统提示词覆盖、跨会话泄露、RAG 文档外泄、PII、SQL/Shell 注入、SSRF、越狱模板等零容忍插件任一命中即拦截；过度代理、幻觉等设宽容上限；另含诱饵机密断言与覆盖度护栏（样本量、必备插件、未知率），CI 以 `--enforce-coverage` 强制执行。每个启用的插件必须在策略中登记，由 `validate_configs.js` 交叉校验。
-- **结果人工复核**：门禁判定包含 LLM 评审环节，可能存在漏报与误报。放行与拦截都应结合原始证据、真实影响与覆盖面复核。
-- **信息保护**：RAG 语料、会话记录与红队结果可能包含敏感内容，发送给模型服务前请确认符合保密要求与其数据处理条款。
-- **资源控制**：红队扫描与时延基准消耗模型 API 配额，请为账号配置花费上限。
+- **Legal authorization** — only test apps you own or are authorized to test. The red-team plugins generate real attack content and call model services; never point this pipeline at unauthorized third-party systems.
+- **Gate policy** — [`scripts/gate_policy.json`](./scripts/gate_policy.json) judges results deterministically: overall attack-success-rate cap of **20%**; zero-tolerance plugins (prompt extraction, system prompt override, cross-session leakage, RAG exfiltration, PII, SQL/shell injection, SSRF, jailbreak templates) fail on a single hit; tolerated caps for excessive agency / hallucination; plus decoy-secret assertions and coverage guardrails enforced in CI with `--enforce-coverage`. Every enabled plugin must be registered in the policy, cross-checked by `validate_configs.js`.
+- **Human review** — gate verdicts include LLM judging and can miss or misfire; review passes and failures against the raw evidence, real impact and coverage.
+- **Information protection** — RAG corpus, session records and red-team results may contain sensitive content; check confidentiality requirements and the provider's data-processing terms before sending anything to a model service.
+- **Resource control** — scans and benchmarks consume API quota; set a spend limit on the account.
 
-使用者须自行取得测试授权，并对自己的行为及造成的后果承担法律责任。项目许可不构成对测试任何第三方系统的授权。
+You are responsible for obtaining test authorization and for your own actions; the project license grants no authorization to test third-party systems.
 
-## 许可说明
+## License
 
-本仓库遵循 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/) 非商业许可（声明见 [SECURITY.md](./SECURITY.md)），使用、修改与分发须符合许可条款。promptfoo、DeepSeek 等第三方组件与服务各自受其许可与服务条款约束，本仓库许可不替代其条款。
+This repository is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/) (statement in [SECURITY.md](./SECURITY.md)). Third-party components remain under their own licenses and terms.
 
-| 文件 | 内容 |
+| File | Content |
 | --- | --- |
-| [SECURITY.md](./SECURITY.md) | 免责声明、使用合规要求与部署风险 |
+| [SECURITY.md](./SECURITY.md) | Disclaimer, compliance requirements, deployment risks |
