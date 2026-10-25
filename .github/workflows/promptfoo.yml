@@ -121,6 +121,11 @@ jobs:
         run: promptfoo eval -c configs/promptfooconfig.memory.yaml -o results-memory.json
         continue-on-error: true
 
+      - name: 红队定向 - 创意攻击 (自研 plugin 真实生成)
+        if: env.UPSTREAM_API_KEY != ''
+        run: promptfoo redteam run -c promptfooconfig_creative.yaml -o results-creative.json
+        continue-on-error: true
+
       - name: CI Security Gate (违反策略即失败, 不可跳过)
         if: env.UPSTREAM_API_KEY != ''
         run: |

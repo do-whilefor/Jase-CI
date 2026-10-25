@@ -1,5 +1,5 @@
 # promptfoo 红队测试配置 — 全量扫描(模型后端经上游网关, 由 UPSTREAM_* 决定)
-# 覆盖类别: 注入 / 越狱 / PII / RAG 泄露 / Tool 滥用 / 幻觉 / 基础注入类
+# 覆盖类别: 注入 / 越狱 / PII / RAG 泄露 / Tool 滥用 / 幻觉 / 基础注入类 / 创意攻击
 description: "Jase-CI - promptfoo 红队全量扫描 (目标: 上游网关裸模型)"
 
 targets:
@@ -68,6 +68,15 @@ redteam:
     - shell-injection
     - ssrf
     - debug-access
+    # ---- 创意攻击 (自研 custom plugin, 定义见 configs/redteam/; 同 creative 定向套件) ----
+    - id: file://configs/redteam/blank-filling.json
+    - id: file://configs/redteam/oracle-questions.json
+    - id: file://configs/redteam/jigsaw-split.json
+    - id: file://configs/redteam/negative-list.json
+    - id: file://configs/redteam/counter-example.json
+    - id: file://configs/redteam/pinyin-homophone.json
+    - id: file://configs/redteam/emotion-leverage.json
+    - id: file://configs/redteam/false-precedent.json
   strategies:
     - basic
     - rot13

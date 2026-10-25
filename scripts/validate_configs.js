@@ -44,6 +44,7 @@ const CONFIG_DIR = path.join(__dirname, '..', 'configs');
 const FILES = [
   ...fs.readdirSync(CONFIG_DIR).filter((f) => f.endsWith('.yaml')).map((f) => path.join(CONFIG_DIR, f)),
   path.join(__dirname, '..', 'promptfooconfig_full.yaml'),
+  path.join(__dirname, '..', 'promptfooconfig_creative.yaml'),
 ];
 
 // GitHub Actions 工作流也纳入语法校验
@@ -94,11 +95,41 @@ for (const file of FILES) {
     if (!Array.isArray(rt.plugins) || rt.plugins.length === 0) {
       fail('redteam.plugins 为空');
     } else {
-      const dupes = rt.plugins.filter((p, i) => rt.plugins.indexOf(p) !== i);
-      if (dupes.length) fail(`redteam.plugins 重复: ${[...new Set(dupes)].join(', ')}`);
-      if (!rt.plugins.every((p) => typeof p === 'string' && p.length)) fail('redteam.plugins 含非法条目');
-      ok(`plugins: ${rt.plugins.length} 个 (无重复)`);
+      const pluginIds = [];
       for (const p of rt.plugins) {
+        if (typeof p === 'string' && p.length) {
+          pluginIds.push(p);
+          continue;
+        }
+        // 对象形: {id: <内置名 | file:// 定义路径>, numTests?: number} — custom plugin 引用
+        if (p && typeof p === 'object' && typeof p.id === 'string' && p.id) {
+          if (p.numTests !== undefined) {
+            const n = Number(p.numTests);
+            if (!(n > 0)) fail(`插件 '${p.id}' numTests 必须 > 0`);
+            else if (n > 1000) fail(`插件 '${p.id}' numTests=${p.numTests} 超过上界 1000 (CI 成本保护)`);
+          }
+          if (p.id.startsWith('file://')) {
+            const defPath = path.resolve(path.dirname(file), p.id.slice('file://'.length));
+            try {
+              const def = JSON.parse(fs.readFileSync(defPath, 'utf8'));
+              if (!def.generator || !def.grader) {
+                fail(`自定义插件 '${p.id}' 定义缺少 generator/grader`);
+              } else {
+                ok(`自定义插件 ${path.basename(p.id)} (id=${def.id || '默认'}, generator+grader)`);
+              }
+            } catch (e) {
+              fail(`自定义插件 '${p.id}' 定义文件不可读或非 JSON: ${e.message}`);
+            }
+          }
+          pluginIds.push(p.id);
+          continue;
+        }
+        fail(`redteam.plugins 含非法条目: ${JSON.stringify(p)}`);
+      }
+      const dupes = pluginIds.filter((p, i) => pluginIds.indexOf(p) !== i);
+      if (dupes.length) fail(`redteam.plugins 重复: ${[...new Set(dupes)].join(', ')}`);
+      ok(`plugins: ${pluginIds.length} 个 (无重复)`);
+      for (const p of pluginIds) {
         if (!suitePlugins.has(p)) suitePlugins.set(p, []);
         suitePlugins.get(p).push(rel);
       }
