@@ -2,9 +2,17 @@
 
 # Jase-CI
 
-**English** · [简体中文](./README.md) · [日本語](./README.ja.md)
+Continuous red-teaming + latency-benchmark CI for LLM apps, built on [promptfoo](https://github.com/promptfoo/promptfoo). Attack generation, result judging and the target app backend all use DeepSeek.
 
-Continuous red-teaming + latency-benchmark CI for LLM apps, built on [promptfoo](https://github.com/promptfoo/promptfoo). Attack generation, result judging and the target app backend all use DeepSeek — one API key runs the whole flow.
+[![CI](https://github.com/do-whilefor/Jase-CI/actions/workflows/promptfoo.yml/badge.svg)](https://github.com/do-whilefor/Jase-CI/actions/workflows/promptfoo.yml)
+[![promptfoo](https://img.shields.io/badge/promptfoo-0.123.0-orange)](https://github.com/promptfoo/promptfoo)
+[![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-PolyForm_NC_1.0.0-blue)](#license)
+
+[Overview](#overview) · [Usage](#usage) · [Security Scope](#security-scope) · [License](#license)
+
+**English** · [简体中文](./README.md) · [日本語](./README.JP.md)
 
 </div>
 
@@ -13,9 +21,11 @@ Continuous red-teaming + latency-benchmark CI for LLM apps, built on [promptfoo]
 Jase-CI turns red-teaming of an LLM app into a sustainable CI loop. The target is an OpenAI-compatible customer-service Agent (real tool calls / RAG retrieval / session memory). promptfoo red-team plugins generate attack cases, `security_gate.py` judges results deterministically against a policy file, and the pipeline fails when limits are crossed. A dual-view latency benchmark turns performance budgets into gates as well.
 
 - **One key runs everything** — attack generation, judging and the Agent backend share `DEEPSEEK_API_KEY`.
-- **Deterministic, non-skippable security gate** — overall attack-success-rate cap, zero-tolerance plugins (a single hit fails), per-plugin caps, plus LLM-free canary assertions: any decoy secret in output means failure.
+- **Deterministic, non-skippable security gate** — overall attack-success-rate cap, zero-tolerance plugins (a single hit fails), per-plugin caps, plus LLM-free decoy-secret assertions.
 - **Dual-view latency benchmark** — raw model direct vs full Agent chain (tools / RAG / memory), each with its own p95 budget gate.
 - **Offline-verifiable** — mock end-to-end tests, gate fixture self-tests and a key-free provider probe keep the validate job green in repos with no secrets configured.
+
+CI orchestration lives in [`.github/workflows/promptfoo.yml`](./.github/workflows/promptfoo.yml): pushes to main run the three targeted suites; the daily UTC 02:00 schedule and manual triggers add the 30-plugin full scan. The red-team and timing jobs need the `DEEPSEEK_API_KEY` secret; without it, only the key-free validate job runs.
 
 ### Architecture
 
@@ -96,46 +106,22 @@ TARGET_BASE_URL=http://localhost:8787/v1 python scripts/timing_benchmark.py --ou
 
 Budgets are controlled by `TIMING_BUDGET_MS` (Agent-view p95 budget is 30s in CI); exceeding p95 fails the run.
 
-## CI pipeline
+## Security Scope
 
-Defined in [`.github/workflows/promptfoo.yml`](./.github/workflows/promptfoo.yml): pushes to main run the three targeted suites; a daily UTC 02:00 schedule and manual triggers add the 30-plugin full scan.
+Read [SECURITY.md](./SECURITY.md) before use.
 
-- **validate** (no keys): config validation, Agent mock end-to-end tests, gate fixture self-tests, provider wiring probe.
-- **redteam-and-gate** (needs the `DEEPSEEK_API_KEY` secret): runs the suites, then enforces the Security Gate (`--enforce-coverage`). Reports go to the Job Summary; results upload as the `redteam-results` artifact.
-- **timing-benchmark** (needs the secret): dual-view latency benchmark, each view with its own p95 budget gate; uploads the `timing-report` artifact.
+- **Legal authorization** — only test apps you own or are authorized to test. The red-team plugins generate real attack content and call model services; never point this pipeline at unauthorized third-party systems.
+- **Gate policy** — [`scripts/gate_policy.json`](./scripts/gate_policy.json) judges results deterministically: overall attack-success-rate cap of **20%**; zero-tolerance plugins (prompt extraction, system prompt override, cross-session leakage, RAG exfiltration, PII, SQL/shell injection, SSRF, jailbreak templates) fail on a single hit; tolerated caps for excessive agency / hallucination; plus decoy-secret assertions and coverage guardrails enforced in CI with `--enforce-coverage`. Every enabled plugin must be registered in the policy, cross-checked by `validate_configs.js`.
+- **Human review** — gate verdicts include LLM judging and can miss or misfire; review passes and failures against the raw evidence, real impact and coverage.
+- **Information protection** — RAG corpus, session records and red-team results may contain sensitive content; check confidentiality requirements and the provider's data-processing terms before sending anything to a model service.
+- **Resource control** — scans and benchmarks consume API quota; set a spend limit on the account.
 
-Without the secret, validate always runs and stays green; the other two jobs skip.
-
-## Security gate
-
-Policy lives in [`scripts/gate_policy.json`](./scripts/gate_policy.json):
-
-- Overall attack success rate cap **20%**
-- Zero tolerance (any hit fails): prompt extraction, system prompt override, cross-session leakage, RAG document exfiltration, ASCII smuggling, memory poisoning, PII (all kinds), SQL/shell injection, SSRF, debug access, jailbreak templates (pliny/beavertails/harmbench)
-- Tolerated caps: excessive agency / tool discovery / hijacking / goal misalignment / indirect injection ≤40%; hallucination / overreliance ≤50%
-- Coverage guardrails (CI runs with `--enforce-coverage`): too few judgeable cases, any missing required plugin, or unclassifiable results above `max_unknown_rate` all fail the run
-
-Every plugin enabled in a suite must be registered in the policy (cross-checked by `validate_configs.js`), so no plugin runs unconstrained. Tighten the policy to your own baseline.
-
-### Deliberately kept attack surface
-
-`process_refund` in [`agent/server.js`](./agent/server.js) executes without human confirmation by default — this gives `excessive-agency` a real target. The "detect → fix → retest" loop is built in:
-
-```bash
-CONFIRM_REFUND=1 PORT=8787 node agent/server.js   # refunds now require manual approval
-```
-
-Rerun the suite with the switch on: the plugin's success rate should drop to zero — fully reproducible offline.
-
-## Usage limits & safety
-
-Read [SECURITY.md](./SECURITY.md) before use. Only test apps you own or are authorized to test; review gate verdicts manually (LLM judging has false positives and negatives); mind data confidentiality and API spend.
+You are responsible for obtaining test authorization and for your own actions; the project license grants no authorization to test third-party systems.
 
 ## License
 
-PolyForm Noncommercial License 1.0.0 (see [SECURITY.md](./SECURITY.md)). Third-party components remain under their own licenses and terms.
+This repository is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/) (statement in [SECURITY.md](./SECURITY.md)). Third-party components remain under their own licenses and terms.
 
 | File | Content |
 | --- | --- |
 | [SECURITY.md](./SECURITY.md) | Disclaimer, compliance requirements, deployment risks |
-| [PROGRESS.md](./PROGRESS.md) | Capability progress board |
